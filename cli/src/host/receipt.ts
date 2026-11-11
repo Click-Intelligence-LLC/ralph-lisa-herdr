@@ -1,0 +1,290 @@
+/** Read-only request status; only a fully verified latest receipt is committed. */
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { STATE_DIR } from "../state.js";
+import { canonicalProject, HostContractError, inspectProject } from "./inspect.js";
+import { acquireHostLock, entryExists } from "./lease.js";
+import { auditHostIntent, readHostIntent } from "./transaction.js";
+import { committedReceiptLedger, verifyLatestCommittedReceipt } from "./receipt-store.js";
+import { assertGenerationMatchesBusiness, readGeneration } from "./generation.js";
+import { businessDigest } from "./business.js";
+import { candidateInventory } from "./candidate.js";
+import { rejectedReceiptInventory } from "./rejection.js";
+import { humanConfirmationInventory } from "./confirmation.js";
+import { auditTaskUpdateIntent, readTaskUpdateIntent, readTaskUpdateReceipt,
+  type TaskUpdateIntent } from "./task-update-record.js";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export interface HostReceiptStatus {
+  schema: 1;
+  status: "unknown" | "needs_reconcile" | "committed" | "rejected" | "task_updated";
+  request_id: string;
+  session_id: string | null;
+  code?: "NEEDS_RECONCILE" | "POLICY_BLOCKED" | "GATE_BLOCKED";
+  reason?: string;
+  intent?: {
+    candidate_id: string;
+    role: "ralph" | "lisa";
+    generation_before: number;
+    content_sha256: string;
+    state_digest_before: string;
+    state_digest_after: string;
+    audit_status: "before" | "applied" | "partial";
+    state_digest_observed: string | null;
+  };
+  task_update_intent?: {
+    mode: "supplement" | "switch";
+    generation_before: number;
+    task_version_before: number;
+    content_sha256: string;
+    state_digest_before: string;
+    state_digest_after: string;
+    audit_status: "before" | "applied" | "partial";
+    state_digest_observed: string | null;
+    unmatched_files: string[];
+  };
+}
+
+function reconcile(requestId: string, sessionId: string | null, reason: string): HostReceiptStatus {
+  return { schema: 1, status: "needs_reconcile", request_id: requestId,
+    session_id: sessionId, code: "NEEDS_RECONCILE", reason };
+}
+
+function pendingTaskUpdateStatus(intent: TaskUpdateIntent): HostReceiptStatus {
+  const audit = auditTaskUpdateIntent(intent);
+  return { ...reconcile(intent.request_id, intent.session_id, "pending_task_update_intent"),
+    task_update_intent: {
+      mode: intent.mode, generation_before: intent.generation_before,
+      task_version_before: intent.task_version_before,
+      content_sha256: intent.content_sha256,
+      state_digest_before: intent.state_digest_before,
+      state_digest_after: intent.state_digest_after,
+      audit_status: audit.status, state_digest_observed: audit.state_digest_observed,
+      unmatched_files: audit.files.filter((file) => !file.matches_before && !file.matches_after)
+        .map((file) => file.name),
+    } };
+}
+
+/** A pending write anywhere in the session prevents claiming any request is unknown. */
+export function receiptStatus(project: string, requestId: string): HostReceiptStatus {
+  if (!UUID.test(requestId)) throw new HostContractError("INVALID_ARGUMENTS", 2, "--request-id must be a UUID");
+  requestId = requestId.toLowerCase();
+  const root = canonicalProject(project);
+  const releaseLock = acquireHostLock(path.join(root, STATE_DIR));
+  try {
+    let current;
+    try {
+      current = inspectProject(root);
+    } catch (error) {
+      // A torn business file can make ordinary inspection fail after an intent was written.
+      const host = path.join(root, STATE_DIR, "host");
+      try {
+        const taskIntent = readTaskUpdateIntent(host, requestId);
+        if (taskIntent?.project_realpath === root &&
+            taskIntent.state_realpath === path.join(root, STATE_DIR))
+          return pendingTaskUpdateStatus(taskIntent);
+      } catch { /* Preserve the conservative generic reconciliation below. */ }
+      if (entryExists(path.join(host, "intents")) ||
+          entryExists(path.join(host, "archived-intents")) ||
+          entryExists(path.join(host, "receipts")) ||
+          entryExists(path.join(host, "task-update-intents")) ||
+          entryExists(path.join(host, "task-update-receipts")) ||
+          entryExists(path.join(host, "rejections")) ||
+          entryExists(path.join(host, "confirmations")) ||
+          entryExists(path.join(host, "reconcile.json"))) {
+        return reconcile(requestId, null, "state_invalid_with_host_intent");
+      }
+      throw error;
+    }
+    if (!current.initialized || !current.state_realpath || !current.session_id ||
+        current.contract_state !== "identified") {
+      throw new HostContractError("ADOPT_REQUIRED", 3, "An identified RLL session is required for receipt lookup");
+    }
+    const sessionId = current.session_id;
+    const host = path.join(current.state_realpath, "host");
+    if (!entryExists(host)) {
+      return { schema: 1, status: "unknown", request_id: requestId, session_id: sessionId };
+    }
+    const hostStat = fs.lstatSync(host);
+    if (!hostStat.isDirectory() || hostStat.isSymbolicLink() || fs.realpathSync.native(host) !== host) {
+      return reconcile(requestId, sessionId, "invalid_host_directory");
+    }
+    for (const marker of ["reconcile.json", "claim.lock", "lease.json", "binding.pending",
+      "adoption.pending", "generation.pending"]) {
+      if (entryExists(path.join(host, marker))) return reconcile(requestId, sessionId, `pending_${marker}`);
+    }
+    let generation;
+    try {
+      generation = readGeneration(host, root, current.state_realpath, sessionId);
+    } catch {
+      return reconcile(requestId, sessionId, "invalid_generation_record");
+    }
+    try {
+      const taskReceipt = readTaskUpdateReceipt(host, requestId);
+      const taskIntent = readTaskUpdateIntent(host, requestId);
+      if (taskIntent) return pendingTaskUpdateStatus(taskIntent);
+      if (taskReceipt) {
+        committedReceiptLedger(host, root, current.state_realpath, sessionId, generation);
+        if (!generation || generation.generation < taskReceipt.generation_after)
+          return reconcile(requestId, sessionId, "task_update_generation_mismatch");
+        assertGenerationMatchesBusiness(generation,
+          businessDigest(current.state_realpath, current.turn!, current.round!, current.step!),
+          current.turn!, current.round!, current.step!);
+        return taskReceipt;
+      }
+    } catch {
+      return reconcile(requestId, sessionId, "task_update_receipt_requires_review");
+    }
+    const intentDir = path.join(host, "intents");
+    if (entryExists(intentDir)) {
+      try {
+        const stat = fs.lstatSync(intentDir);
+        if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync.native(intentDir) !== intentDir) {
+          return reconcile(requestId, sessionId, "invalid_intent_directory");
+        }
+        if (fs.readdirSync(intentDir).some((name) => name.endsWith(".pending"))) {
+          return reconcile(requestId, sessionId, "interrupted_intent_write");
+        }
+      } catch {
+        return reconcile(requestId, sessionId, "invalid_intent_directory");
+      }
+    }
+    // After a process crash, a partial business write can make confirmation
+    // history fail its current-state check. Expose the pending intent audit first
+    // so the operator can see which files match the before/after digests.
+    if (entryExists(path.join(host, "intents", `${requestId}.json`)) &&
+        !entryExists(path.join(host, "receipts", `${requestId}.json`)) &&
+        !entryExists(path.join(host, "receipts", `${requestId}.pending`))) {
+      try {
+        const intent = readHostIntent(host, requestId);
+        if (!intent || intent.project_realpath !== root ||
+            intent.state_realpath !== current.state_realpath || intent.session_id !== sessionId) {
+          return reconcile(requestId, sessionId, "intent_session_mismatch");
+        }
+        const audit = auditHostIntent(host, requestId);
+        return { ...reconcile(requestId, sessionId, "prepared_intent_without_receipt"),
+          intent: {
+            candidate_id: intent.candidate_id, role: intent.role,
+            generation_before: intent.generation_before, content_sha256: intent.content_sha256,
+            state_digest_before: intent.state_digest_before,
+            state_digest_after: intent.state_digest_after,
+            audit_status: audit.status, state_digest_observed: audit.state_digest_observed,
+          } };
+      } catch {
+        return reconcile(requestId, sessionId, "invalid_intent_record");
+      }
+    }
+    if (entryExists(path.join(host, "confirmations"))) {
+      try {
+        const ledger = committedReceiptLedger(host, root, current.state_realpath, sessionId, generation);
+        const candidates = candidateInventory(host, root, current.state_realpath, sessionId);
+        humanConfirmationInventory(host, root, current.state_realpath, sessionId,
+          generation, ledger, candidates.candidates);
+      } catch {
+        return reconcile(requestId, sessionId, "invalid_source_confirmation");
+      }
+    }
+    const rejections = path.join(host, "rejections");
+    if (entryExists(rejections)) {
+      try {
+        const ledger = committedReceiptLedger(host, root, current.state_realpath, sessionId, generation);
+        const candidates = candidateInventory(host, root, current.state_realpath, sessionId);
+        const inventory = rejectedReceiptInventory(host, root, current.state_realpath, sessionId,
+          generation, ledger, candidates.candidates);
+        if (generation) {
+          assertGenerationMatchesBusiness(generation,
+            businessDigest(current.state_realpath, current.turn!, current.round!, current.step!),
+            current.turn!, current.round!, current.step!);
+        }
+        const rejected = inventory.receipts.find((record) => record.request_id === requestId);
+        if (rejected) return rejected;
+      } catch {
+        return reconcile(requestId, sessionId, "invalid_rejected_receipt");
+      }
+    }
+    const receipts = path.join(host, "receipts");
+    if (entryExists(receipts)) {
+      let names: string[];
+      try {
+        const stat = fs.lstatSync(receipts);
+        if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync.native(receipts) !== receipts) {
+          return reconcile(requestId, sessionId, "invalid_receipt_directory");
+        }
+        names = fs.readdirSync(receipts);
+      } catch {
+        return reconcile(requestId, sessionId, "unreadable_receipt_directory");
+      }
+      if (names.includes(`${requestId}.json`)) {
+        try {
+          if (readHostIntent(host, requestId)) {
+            const committed = verifyLatestCommittedReceipt(host, requestId, root, current.state_realpath, sessionId);
+            return committed ?? reconcile(requestId, sessionId, "missing_committed_receipt");
+          }
+        } catch {
+          return reconcile(requestId, sessionId, "invalid_committed_receipt");
+        }
+      }
+      try {
+        const ledger = committedReceiptLedger(host, root, current.state_realpath, sessionId, generation);
+        if (generation) {
+          assertGenerationMatchesBusiness(generation,
+            businessDigest(current.state_realpath, current.turn!, current.round!, current.step!),
+            current.turn!, current.round!, current.step!);
+        }
+        return ledger.receipts.find((record) => record.request_id === requestId) ??
+          { schema: 1, status: "unknown", request_id: requestId, session_id: sessionId };
+      } catch {
+        return reconcile(requestId, sessionId,
+          names.includes(`${requestId}.json`) ? "invalid_committed_receipt" : "receipt_store_requires_review");
+      }
+    }
+    try {
+      committedReceiptLedger(host, root, current.state_realpath, sessionId, generation);
+    } catch {
+      return reconcile(requestId, sessionId, "receipt_store_requires_review");
+    }
+    const intents = path.join(host, "intents");
+    if (!entryExists(intents)) {
+      return { schema: 1, status: "unknown", request_id: requestId, session_id: sessionId };
+    }
+    const stat = fs.lstatSync(intents);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync.native(intents) !== intents) {
+      return reconcile(requestId, sessionId, "invalid_intent_directory");
+    }
+    const names = fs.readdirSync(intents);
+    if (names.length === 0) {
+      return { schema: 1, status: "unknown", request_id: requestId, session_id: sessionId };
+    }
+    if (names.some((name) => !UUID.test(name.replace(/\.(json|pending)$/, "")) ||
+        !/\.(json|pending)$/.test(name))) {
+      return reconcile(requestId, sessionId, "invalid_intent_entry");
+    }
+    if (names.some((name) => name.endsWith(".pending"))) {
+      return reconcile(requestId, sessionId, "interrupted_intent_write");
+    }
+    if (!names.includes(`${requestId}.json`)) {
+      return reconcile(requestId, sessionId, "another_request_needs_reconcile");
+    }
+    try {
+      const intent = readHostIntent(host, requestId);
+      if (!intent || intent.project_realpath !== root ||
+          intent.state_realpath !== current.state_realpath || intent.session_id !== sessionId) {
+        return reconcile(requestId, sessionId, "intent_session_mismatch");
+      }
+      const audit = auditHostIntent(host, requestId);
+      return { ...reconcile(requestId, sessionId, "prepared_intent_without_receipt"),
+        intent: {
+          candidate_id: intent.candidate_id, role: intent.role,
+          generation_before: intent.generation_before, content_sha256: intent.content_sha256,
+          state_digest_before: intent.state_digest_before,
+          state_digest_after: intent.state_digest_after,
+          audit_status: audit.status, state_digest_observed: audit.state_digest_observed,
+        } };
+    } catch {
+      return reconcile(requestId, sessionId, "invalid_intent_record");
+    }
+  } finally {
+    releaseLock();
+  }
+}

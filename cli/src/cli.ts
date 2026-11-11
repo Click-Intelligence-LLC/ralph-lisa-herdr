@@ -1,0 +1,332 @@
+#!/usr/bin/env node
+
+/**
+ * ralph-lisa CLI - Turn-based dual-agent collaboration.
+ * Replaces io.sh with Node/TS implementation.
+ *
+ * Usage: ralph-lisa <command> [args...]
+ */
+
+import {
+  cmdInit,
+  cmdInitProject,
+  cmdUninit,
+  cmdWhoseTurn,
+  cmdSubmitRalph,
+  cmdSubmitLisa,
+  cmdStatus,
+  cmdRead,
+  cmdRecap,
+  cmdStep,
+  cmdHistory,
+  cmdArchive,
+  cmdClean,
+  cmdStart,
+  cmdAuto,
+  cmdPolicy,
+  cmdDoctor,
+  cmdLogs,
+  cmdUpdateTask,
+  cmdForceTurn,
+  cmdRemote,
+  cmdStateDir,
+  cmdSubtask,
+  cmdAddContext,
+  cmdStop,
+  cmdEmergencyMsg,
+  cmdNotify,
+  cmdSmokeTest,
+  cmdSmokeCheck,
+  cmdTestReport,
+} from "./commands.js";
+import { cmdHost } from "./host/cli.js";
+import { guardCliMutation } from "./host/guard.js";
+import { routeAutoArgs } from "./herdr/options.js";
+import { reportHerdrLaunch } from "./herdr/launch.js";
+
+const args = process.argv.slice(2);
+const cmd = args[0] || "";
+const rest = args.slice(1);
+
+let autoRoute: ReturnType<typeof routeAutoArgs> | null = null;
+try {
+  if (cmd === "auto") autoRoute = routeAutoArgs(rest);
+} catch (error) {
+  console.error(`Error: ${error instanceof Error ? error.message : "INVALID_AUTO_OPTIONS"}`);
+  process.exit(2);
+}
+
+if (autoRoute?.host === "herdr") {
+  reportHerdrLaunch(autoRoute.options);
+} else {
+guardCliMutation(cmd, autoRoute?.host === "tmux" ? autoRoute.args : rest);
+
+switch (cmd) {
+  case "host":
+    cmdHost(rest);
+    break;
+
+  case "init":
+    // If first arg after init looks like a path, use cmdInitProject
+    // If it looks like a task description, also use cmdInitProject (with no path)
+    cmdInitProject(rest);
+    break;
+
+  case "uninit":
+    cmdUninit();
+    break;
+
+  case "whose-turn":
+  case "check-turn":
+    cmdWhoseTurn();
+    break;
+
+  case "submit-ralph":
+    cmdSubmitRalph(rest);
+    break;
+
+  case "submit-lisa":
+    cmdSubmitLisa(rest);
+    break;
+
+  case "status":
+    cmdStatus();
+    break;
+
+  case "read":
+    cmdRead(rest);
+    break;
+
+  case "read-review":
+    cmdRead(["review.md", ...rest]);
+    break;
+
+  case "recap":
+    cmdRecap();
+    break;
+
+  case "step":
+  case "next-step":
+    cmdStep(rest);
+    break;
+
+  case "history":
+    cmdHistory();
+    break;
+
+  case "archive":
+    cmdArchive(rest);
+    break;
+
+  case "clean":
+    cmdClean();
+    break;
+
+  case "start":
+    cmdStart(rest);
+    break;
+
+  case "auto":
+    cmdAuto(autoRoute?.host === "tmux" ? autoRoute.args : rest);
+    break;
+
+  case "policy":
+    cmdPolicy(rest);
+    break;
+
+  case "doctor":
+    cmdDoctor(rest);
+    break;
+
+  case "logs":
+    cmdLogs(rest);
+    break;
+
+  case "scope-update":
+  case "update-task":
+    cmdUpdateTask(rest);
+    break;
+
+  case "force-turn":
+    cmdForceTurn(rest);
+    break;
+
+  case "remote":
+    cmdRemote(rest);
+    break;
+
+  case "state-dir":
+    cmdStateDir(rest);
+    break;
+
+  case "subtask":
+    cmdSubtask(rest);
+    break;
+
+  case "add-context":
+    cmdAddContext(rest);
+    break;
+
+  case "stop":
+    cmdStop(rest);
+    break;
+
+  case "emergency-msg":
+    cmdEmergencyMsg(rest);
+    break;
+
+  case "notify":
+    cmdNotify(rest);
+    break;
+
+  case "smoke-test":
+    cmdSmokeTest(rest);
+    break;
+
+  case "smoke-check":
+    cmdSmokeCheck(rest);
+    break;
+
+  case "test-report":
+    cmdTestReport(rest);
+    break;
+
+  case "help":
+  case "--help":
+  case "-h":
+  case "":
+    showHelp();
+    break;
+
+  case "--version":
+  case "-v":
+    showVersion();
+    break;
+
+  default:
+    console.error(`Unknown command: ${cmd}`);
+    console.error('Run "ralph-lisa --help" for usage.');
+    process.exit(1);
+}
+}
+
+function showHelp(): void {
+  console.log("Ralph Lisa Dual-Agent Loop - CLI");
+  console.log("");
+  console.log("Project Setup:");
+  console.log("  ralph-lisa init [dir]              Initialize project");
+  console.log("  ralph-lisa init --minimal [dir]    Minimal init (session only, no project files)");
+  console.log("  ralph-lisa uninit                  Remove from project");
+  console.log('  ralph-lisa start "task"             Launch both agents');
+  console.log('  ralph-lisa start --full-auto "task" Launch without permission prompts');
+  console.log('  ralph-lisa auto "task"              Auto mode (tmux)');
+  console.log('  ralph-lisa auto --full-auto "task"  Auto mode without permission prompts');
+  console.log('  ralph-lisa auto --host herdr "task" Launch with session auto commits (source unverified)');
+  console.log('  herdr-rll "task"                   Same Herdr launcher');
+  console.log("  ralph-lisa stop                    Graceful stop (archive + cleanup)");
+  console.log("  ralph-lisa stop --force            Force stop (SIGKILL)");
+  console.log("  ralph-lisa stop --no-archive       Stop without archiving");
+  console.log("");
+  console.log("Turn Control:");
+  console.log("  ralph-lisa check-turn                Check whose turn (alias: whose-turn)");
+  console.log("  ralph-lisa submit-ralph --file <f>   Ralph submits from file (recommended)");
+  console.log("  ralph-lisa submit-lisa --file <f>    Lisa submits from file (recommended)");
+  console.log("  ralph-lisa submit-ralph --stdin      Ralph submits from stdin");
+  console.log("  ralph-lisa submit-lisa --stdin       Lisa submits from stdin");
+  console.log('  ralph-lisa submit-ralph "[TAG]..."   Ralph submits inline (deprecated)');
+  console.log('  ralph-lisa submit-lisa "[TAG]..."    Lisa submits inline (deprecated)');
+  console.log("");
+  console.log("Tags:");
+  console.log(
+    "  Ralph: [PLAN] [RESEARCH] [CODE] [FIX] [CHALLENGE] [DISCUSS] [QUESTION] [CONSENSUS]"
+  );
+  console.log(
+    "  Lisa:  [PASS] [NEEDS_WORK] [CHALLENGE] [DISCUSS] [QUESTION] [CONSENSUS]"
+  );
+  console.log("");
+  console.log("Information:");
+  console.log("  ralph-lisa host inspect --project <abs> --json  Inspect one project for host integration");
+  console.log("  ralph-lisa host adopt --project <abs> --json  Back up and freeze a legacy session for review");
+  console.log("  ralph-lisa host confirm-adoption --project <abs> --backup-id <uuid> --decision no-replay --json");
+  console.log("  ralph-lisa host claim --project <abs> --host herdr --owner-id <uuid> --json");
+  console.log("  ralph-lisa host heartbeat --project <abs> --lease-id <uuid> --owner-id <uuid> --json");
+  console.log("  ralph-lisa host command-lock-check --project <abs> --json  Inspect a short command lock after a crash");
+  console.log("  ralph-lisa host retire-command-lock --project <abs> --expected-evidence <sha256> --decision verified-stopped-no-replay --json");
+  console.log("  ralph-lisa host recovery-check --project <abs> --json  Review a claimed lease before manual recovery");
+  console.log("  ralph-lisa host recover-lease --project <abs> --lease-id <uuid> --expected-evidence <sha256> --decision verified-stopped-no-replay --json");
+  console.log("  ralph-lisa host bind-seat --project <abs> --lease-id <uuid> --role <ralph|lisa> --workspace-id <id> --pane-id <id> --agent-target <id> --json");
+  console.log("  ralph-lisa host snapshot --project <abs> --json  Consistent host and RLL state digest");
+  console.log("  ralph-lisa host prepare-generation --project <abs> --lease-id <uuid> --expected-digest <sha256> --json");
+  console.log("  ralph-lisa host propose --project <abs> --role <ralph|lisa> --file <project-path> --candidate-id <uuid> --json");
+  console.log("  ralph-lisa host candidates --project <abs> --json  List immutable candidate metadata");
+  console.log("  ralph-lisa host candidate-show --project <abs> --candidate-id <uuid> --json  Read candidate content for review");
+  console.log("  ralph-lisa host receipt --project <abs> --request-id <uuid> --json  Read one request without replay");
+  console.log("  ralph-lisa host release --project <abs> --lease-id <uuid> --json");
+  console.log("  ralph-lisa status                   Show current status");
+  console.log("  ralph-lisa read-review              Read Lisa's review (alias: read review.md)");
+  console.log("  ralph-lisa read <file>              Read work.md/review.md/etc");
+  console.log("  ralph-lisa recap                    Context recovery summary");
+  console.log("  ralph-lisa history                  Show full history");
+  console.log("");
+  console.log("Flow Control:");
+  console.log('  ralph-lisa next-step "name"              Enter new step (alias: step)');
+  console.log('  ralph-lisa next-step "name" --task "t"   Enter step with first subtask');
+  console.log('  ralph-lisa scope-update "desc"            Update task scope (alias: update-task)');
+  console.log('  ralph-lisa subtask add "desc"             Add subtask to current step');
+  console.log("  ralph-lisa subtask done <N>               Mark subtask N as complete");
+  console.log("  ralph-lisa subtask list                   List all subtasks");
+  console.log('  ralph-lisa add-context "note"             Add context note (visible to Lisa)');
+  console.log("  ralph-lisa force-turn <agent>             Manual turn override (disabled in auto mode)");
+  console.log("  ralph-lisa archive [name]                Archive session");
+  console.log("  ralph-lisa clean                         Clean session");
+  console.log("");
+  console.log("Policy:");
+  console.log(
+    "  ralph-lisa policy check <ralph|lisa> Check submission (hard gate)"
+  );
+  console.log(
+    "  ralph-lisa policy check-consensus   Check if both [CONSENSUS]"
+  );
+  console.log(
+    "  ralph-lisa policy check-next-step   Comprehensive pre-step check"
+  );
+  console.log("");
+  console.log("  Standalone policy check always exits non-zero on violations.");
+  console.log("  RL_POLICY_MODE (warn|block|off) affects inline submit checks (default: warn).");
+  console.log("");
+  console.log("Logs:");
+  console.log("  ralph-lisa logs                     List all transcript logs");
+  console.log("  ralph-lisa logs cat                  View live pane logs");
+  console.log("  ralph-lisa logs cat <file>            View specific log file");
+  console.log("");
+  console.log("Remote Access:");
+  console.log("  ralph-lisa remote                   Start ttyd server (default port 7681)");
+  console.log("  ralph-lisa remote --port 8080       Custom port");
+  console.log("  ralph-lisa remote --auth user:pass   Enable basic auth");
+  console.log("  ralph-lisa remote --stop             Stop ttyd server");
+  console.log("");
+  console.log("Emergency & Notifications:");
+  console.log('  ralph-lisa emergency-msg <agent> "msg"  Send emergency message to agent pane');
+  console.log('  ralph-lisa notify "message"              Send notification via RL_NOTIFY_CMD');
+  console.log("");
+  console.log("Smoke Testing:");
+  console.log("  ralph-lisa smoke-test              Run smoke test (uses RL_SMOKE_CMD)");
+  console.log("  ralph-lisa smoke-check             Check smoke test environment");
+  console.log("  ralph-lisa test-report             Show latest test report");
+  console.log("  ralph-lisa test-report --list      List all test reports");
+  console.log("");
+  console.log("Diagnostics:");
+  console.log("  ralph-lisa state-dir                Show state directory resolution");
+  console.log("  ralph-lisa state-dir /path           Set state directory (tmux env)");
+  console.log("  ralph-lisa doctor                   Check all dependencies");
+  console.log("  ralph-lisa doctor --strict           Exit 1 if any missing (for CI)");
+}
+
+function showVersion(): void {
+  try {
+    const pkg = require("../package.json");
+    console.log(`ralph-lisa-loop v${pkg.version}`);
+  } catch {
+    console.log("ralph-lisa-loop v0.3.10");
+  }
+}

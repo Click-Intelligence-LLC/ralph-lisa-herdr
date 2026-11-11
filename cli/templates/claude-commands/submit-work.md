@@ -1,0 +1,39 @@
+---
+description: Submit your work to Lisa for review (Ralph only)
+argument-hint: "[TAG] summary and content"
+---
+
+# Submit Work to Lisa
+
+Submit your work and pass the turn to Lisa.
+
+```!
+ralph-lisa submit-ralph "$ARGUMENTS"
+```
+
+## Required Format
+
+Your content MUST start with a tag and one-line summary:
+
+```
+[TAG] One line summary
+
+Detailed content here...
+```
+
+## Valid Tags for Ralph
+
+| Tag | When to Use |
+|-----|-------------|
+| `[PLAN]` | Submitting a plan |
+| `[RESEARCH]` | Submitting research results (before coding, when involving reference implementations/protocols/APIs) |
+| `[CODE]` | Submitting code implementation (must include Test Results) |
+| `[FIX]` | Submitting fixes based on feedback (must include Test Results) |
+| `[CHALLENGE]` | Disagreeing with Lisa's suggestion, providing counter-argument |
+| `[DISCUSS]` | General discussion or clarification |
+| `[QUESTION]` | Asking for clarification |
+| `[CONSENSUS]` | Confirming agreement |
+
+## After Submission
+
+The turn automatically passes to Lisa. Wait for her feedback — do not take further action until it is your turn again.

@@ -1,0 +1,110 @@
+id = "ralph-lisa.loop"
+name = "Ralph-Lisa Loop"
+version = "0.1.8"
+min_herdr_version = "0.9.4"
+description = "Run Ralph-Lisa seats and host coordination inside Herdr"
+platforms = ["macos"]
+
+[[build]]
+command = ["npm", "ci", "--prefix", "../../cli", "--ignore-scripts", "--no-audit", "--no-fund"]
+
+[[build]]
+command = ["npm", "run", "build", "--prefix", "../../cli"]
+
+[[build]]
+command = ["node", "../../cli/scripts/verify-package.mjs"]
+
+[[actions]]
+id = "doctor"
+title = "Check Ralph-Lisa setup"
+command = ["node", "actions.mjs", "doctor"]
+
+[[actions]]
+id = "status"
+title = "Show Ralph-Lisa status"
+contexts = ["workspace"]
+command = ["node", "actions.mjs", "status"]
+
+[[actions]]
+id = "seat-preflight"
+title = "Check Ralph and Lisa seats"
+contexts = ["workspace"]
+command = ["node", "actions.mjs", "seat-preflight"]
+
+[[actions]]
+id = "start"
+title = "Start Ralph-Lisa workflow"
+contexts = ["workspace"]
+command = ["node", "coordinator.mjs", "start"]
+
+[[actions]]
+id = "pause"
+title = "Pause Ralph-Lisa workflow"
+contexts = ["workspace"]
+command = ["node", "coordinator.mjs", "pause"]
+
+[[actions]]
+id = "resume"
+title = "Resume Ralph-Lisa workflow"
+contexts = ["workspace"]
+command = ["node", "coordinator.mjs", "resume"]
+
+[[actions]]
+id = "recovery-check"
+title = "Review Ralph-Lisa recovery state"
+contexts = ["workspace"]
+command = ["node", "actions.mjs", "recovery-check"]
+
+[[actions]]
+id = "rebind-check"
+title = "Review recovered lease and Herdr seats"
+contexts = ["workspace"]
+command = ["node", "actions.mjs", "rebind-check"]
+
+[[actions]]
+id = "continuation-check"
+title = "Review paused rebind continuation"
+contexts = ["workspace"]
+command = ["node", "actions.mjs", "continuation-check"]
+
+[[actions]]
+id = "stop"
+title = "Stop Ralph-Lisa workflow"
+contexts = ["workspace"]
+command = ["node", "coordinator.mjs", "stop"]
+
+[[panes]]
+id = "start-task"
+title = "Start Ralph-Lisa task"
+placement = "overlay"
+command = ["node", "start-task.mjs"]
+
+[[panes]]
+id = "coordinator"
+title = "Ralph-Lisa workflow"
+placement = "tab"
+command = ["node", "coordinator.mjs", "start"]
+
+[[panes]]
+id = "control"
+title = "Ralph-Lisa control"
+placement = "tab"
+command = ["node", "control.mjs"]
+
+[[panes]]
+id = "review"
+title = "Ralph-Lisa candidate review"
+placement = "tab"
+command = ["node", "review.mjs"]
+
+[[panes]]
+id = "rebind"
+title = "Ralph-Lisa recovered lease rebind"
+placement = "tab"
+command = ["node", "rebind.mjs"]
+
+[[panes]]
+id = "continue"
+title = "Ralph-Lisa paused rebind continuation"
+placement = "tab"
+command = ["node", "continue.mjs"]

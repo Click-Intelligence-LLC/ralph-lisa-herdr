@@ -1,0 +1,23 @@
+Ralph-Lisa Loop — Herdr Plugin
+Copyright (c) 2026 Click Intelligence LLC
+Portions Copyright (c) 2025 YW1975
+
+This repository redistributes code from the MIT-licensed Ralph-Lisa Loop project.
+
+Upstream project:
+  https://github.com/YW1975/Ralph-Lisa-Loop
+  License: MIT (see LICENSE, Copyright (c) 2025 YW1975)
+
+Imported tree source:
+  https://github.com/yueweilu/Ralph-Lisa-Loop
+  Branch: feat/herdr-auto-task-launch
+  Commit: d57eb0f (2026-11-10)
+
+Imported directories:
+  cli/                (Ralph-Lisa Loop CLI)
+  integrations/herdr/ (Herdr plugin)
+  docs/herdr/         (public Herdr design/acceptance documents)
+
+No modifications to the upstream license terms are made. The MIT license text is
+included in LICENSE. This repository is maintained by Click Intelligence LLC for
+distribution through the Herdr plugin marketplace.
