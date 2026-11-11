@@ -18,6 +18,20 @@ ralph-lisa init
 ralph-lisa start "implement login feature"
 ```
 
+## Herdr entry point (macOS)
+
+Install Herdr 0.9.4 or later and the [Ralph-Lisa Herdr plugin](https://github.com/Click-Intelligence-LLC/ralph-lisa-herdr), then install this CLI package **after its 0.3.14 npm release**:
+
+```bash
+herdr plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr
+npm install -g ralph-lisa-loop@0.3.14
+mkdir my-project && cd my-project
+herdr-rll --full-auto "Create a responsive website and run its build"
+herdr-rll status
+```
+
+You can also start from the plugin's task input page in Herdr. Installing the plugin does not register the global `herdr-rll` command. Each new task needs an empty project; use `herdr-rll status` to inspect an existing session. `--full-auto` configures Agent permissions, while eligible candidates are automatically committed for that session with `source_verification=unverified`. Claude can still request directory trust.
+
 ## How It Works
 
 ```
@@ -75,12 +89,7 @@ ralph-lisa test-report                   # View latest test report
 ralph-lisa test-report --list            # List all test reports
 ```
 
-The Herdr host contract is under development. Its `host commit` command requires a
-matching `host confirm-candidate` human assertion before it can run a test gate or
-write an allowed submission. The receipt still marks Herdr source verification as
-`unverified`; this is not automatic Agent attribution. See the
-[S1 host contract implementation](../docs/herdr/public-cli-s1-host-contract-implementation-2026-10-29.md)
-for the command arguments and current verification limits.
+The Herdr host contract supports session-scoped automatic commits for new sessions started through `herdr-rll`, `auto --host herdr`, or the plugin task input page. Manual sessions still require a matching `host confirm-candidate` assertion before `host commit`. Both paths record source verification as `unverified`; this is not independent Agent attribution. See the [Herdr plugin documentation](../integrations/herdr/README.md) for current behavior and limits.
 After a process crash leaves `.rll-host-command-lock`, use `host command-lock-check`
 and, only after verifying that the owner and its child processes stopped,
 `host retire-command-lock` with the returned evidence. Then inspect `host receipt`

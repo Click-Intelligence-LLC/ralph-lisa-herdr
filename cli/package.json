@@ -1,6 +1,6 @@
 {
   "name": "ralph-lisa-loop",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "Turn-based dual-agent collaboration: Ralph codes, Lisa reviews, consensus required.",
   "bin": {
     "ralph-lisa": "dist/cli.js",
@@ -30,12 +30,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YW1975/Ralph-Lisa-Loop.git",
+    "url": "git+https://github.com/Click-Intelligence-LLC/ralph-lisa-herdr.git",
     "directory": "cli"
   },
-  "homepage": "https://github.com/YW1975/Ralph-Lisa-Loop#readme",
+  "homepage": "https://github.com/Click-Intelligence-LLC/ralph-lisa-herdr#readme",
   "bugs": {
-    "url": "https://github.com/YW1975/Ralph-Lisa-Loop/issues"
+    "url": "https://github.com/Click-Intelligence-LLC/ralph-lisa-herdr/issues"
   },
   "engines": {
     "node": ">=18"
