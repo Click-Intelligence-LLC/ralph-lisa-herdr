@@ -1,0 +1,29 @@
+name: CLI and Herdr plugin
+
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci --prefix cli --ignore-scripts --no-audit --no-fund
+      - run: npm run build --prefix cli
+      - run: npm test --prefix cli
+      - run: node --test integrations/herdr/*.test.mjs
+      - run: node cli/scripts/verify-package.mjs
