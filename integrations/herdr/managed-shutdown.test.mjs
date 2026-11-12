@@ -29,6 +29,18 @@ function proposeWhenUnlocked(project, role, file) {
   assert.fail("host propose stayed busy after bounded retries");
 }
 
+function readHostWhenUnlocked(project, action, args = []) {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const result = spawnSync(process.execPath, [cli, "host", action,
+      "--project", project, ...args, "--json"], { encoding: "utf8" });
+    let response;
+    try { response = JSON.parse(result.stdout); } catch { /* Caller assertion includes output. */ }
+    if (result.status !== 4 || response?.code !== "HOST_BUSY") return result;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  }
+  assert.fail(`host ${action} stayed busy after bounded retries`);
+}
+
 function waitForStatus(child, expected, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     let buffer = "";
@@ -167,12 +179,10 @@ for (const scenario of ["normal", "hangup", "changed", "before_prompt", "authori
         assert.equal(active.auto_commit_candidate_id, candidateId);
         assert.match(active.auto_commit_request_id, /^[0-9a-f-]{36}$/);
         assert.equal(fs.readFileSync(commitCalls, "utf8"), "1");
-        const receiptResult = spawnSync(process.execPath, [cli, "host", "receipt",
-          "--project", project, "--request-id", active.auto_commit_request_id,
-          "--json"], { encoding: "utf8" });
+        const receiptResult = readHostWhenUnlocked(project, "receipt",
+          ["--request-id", active.auto_commit_request_id]);
         const receipt = JSON.parse(receiptResult.stdout);
-        const snapshotResult = spawnSync(process.execPath, [cli, "host", "snapshot",
-          "--project", project, "--json"], { encoding: "utf8" });
+        const snapshotResult = readHostWhenUnlocked(project, "snapshot");
         const snapshot = JSON.parse(snapshotResult.stdout);
         const deliveries = fs.readdirSync(sessionDir).filter((name) => name.startsWith("delivery-"));
         if (scenario === "commit_lost_committed") {
