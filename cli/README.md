@@ -20,7 +20,7 @@ ralph-lisa start "implement login feature"
 
 ## Herdr entry point (macOS)
 
-Install Herdr 0.9.4 or later and the [Ralph-Lisa Herdr plugin](https://github.com/Click-Intelligence-LLC/ralph-lisa-herdr), then install this CLI package **after its 0.3.14 npm release**:
+Install Herdr 0.9.4 or later and the [Ralph-Lisa Herdr plugin](https://github.com/Click-Intelligence-LLC/ralph-lisa-herdr), then install this CLI package:
 
 ```bash
 herdr plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr

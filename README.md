@@ -16,7 +16,7 @@ herdr plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr
 
 The manifest builds the bundled CLI from `../../cli` (npm ci + npm run build + verify-package) when the plugin is installed, so the repository must keep the `cli/` directory next to `integrations/herdr/`.
 
-For the terminal entry point, install the CLI package separately **after its 0.3.14 npm release**. The Herdr plugin installation does not add a global `herdr-rll` command:
+For the terminal entry point, install the CLI package separately. The Herdr plugin installation does not add a global `herdr-rll` command:
 
 ```bash
 npm install -g ralph-lisa-loop@0.3.14
