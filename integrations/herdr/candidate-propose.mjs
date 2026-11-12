@@ -97,13 +97,29 @@ async function main() {
   if (current.code !== 0 || !pane || pane.pane_id !== process.env.HERDR_PANE_ID ||
       pane.workspace_id !== process.env.HERDR_WORKSPACE_ID || !pane.terminal_id)
     return fail("CALLER_PANE_MISMATCH");
+  const checked = await host(cli, "snapshot", ["--project", input.project]);
+  const snapshot = checked.value;
+  if (checked.code !== 0 || snapshot?.status !== "ok")
+    return fail(snapshot?.code || "RLL_SNAPSHOT_UNAVAILABLE");
+  const roles = ["ralph", "lisa"].filter((role) =>
+    snapshot.seats?.[role]?.pane_id === pane.pane_id);
+  if (snapshot.project_realpath !== input.project || snapshot.host_state !== "claimed" ||
+      snapshot.binding_state !== "bound" || !Number.isSafeInteger(snapshot.generation) ||
+      snapshot.workspace_id !== pane.workspace_id || roles.length !== 1)
+    return fail("SEAT_BINDING_MISMATCH");
+  const role = roles[0];
+  const target = snapshot.seats[role].agent_target;
+  const kind = role === "ralph" ? "claude" : "codex";
+  if (snapshot.turn !== role || typeof target !== "string" || !target)
+    return fail("SEAT_BINDING_MISMATCH");
   let agent;
   for (let attempt = 0; attempt < 8; attempt++) {
     const live = call(herdr, ["agent", "get", pane.pane_id]);
     agent = live.value?.result?.agent;
     let cwd = null;
     try { cwd = fs.realpathSync.native(agent.cwd); } catch { /* Fail closed. */ }
-    if (live.code !== 0 || !agent || cwd !== input.project ||
+    if (live.code !== 0 || !agent || agent.name !== target || agent.agent !== kind ||
+        cwd !== input.project ||
         agent.pane_id !== pane.pane_id || agent.workspace_id !== pane.workspace_id ||
         agent.terminal_id !== pane.terminal_id)
       return fail("CALLER_AGENT_MISMATCH");
@@ -117,20 +133,6 @@ async function main() {
       });
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  const role = agent.name;
-  const kind = role === "ralph" ? "claude" : role === "lisa" ? "codex" : null;
-  if (!kind || agent.agent !== kind) return fail("CALLER_AGENT_MISMATCH");
-  const checked = await host(cli, "snapshot", ["--project", input.project]);
-  const snapshot = checked.value;
-  if (checked.code !== 0 || snapshot?.status !== "ok")
-    return fail(snapshot?.code || "RLL_SNAPSHOT_UNAVAILABLE");
-  if (snapshot.project_realpath !== input.project || snapshot.turn !== role ||
-      snapshot.host_state !== "claimed" || snapshot.binding_state !== "bound" ||
-      !Number.isSafeInteger(snapshot.generation) ||
-      snapshot.workspace_id !== pane.workspace_id ||
-      snapshot.seats?.[role]?.pane_id !== pane.pane_id ||
-      snapshot.seats?.[role]?.agent_target !== role)
-    return fail("SEAT_BINDING_MISMATCH");
   const proposed = await host(cli, "propose", ["--project", input.project,
     "--role", role, "--file", input.file, "--candidate-id", input.candidateId]);
   const candidate = proposed.value;
@@ -143,7 +145,7 @@ async function main() {
       candidate.binding_generation !== snapshot.binding_generation ||
       candidate.intended_workspace_id !== pane.workspace_id ||
       candidate.intended_pane_id !== pane.pane_id ||
-      candidate.intended_agent_target !== role ||
+      candidate.intended_agent_target !== target ||
       candidate.source_verification !== "unverified" ||
       !SHA256.test(candidate.content_sha256 ?? ""))
     return fail("PROPOSAL_IDENTITY_UNCERTAIN", 7);

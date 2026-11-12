@@ -14,6 +14,7 @@ const helper = path.join(root, "task-update-request.mjs");
 test("Ralph Pane requests a task update without exposing a lease; Lisa is refused", () => {
   const project = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "rll-task-adapter-")));
   const config = path.join(project, "plugin-config");
+  const targets = { ralph: "ralph_6eac48cf75904052", lisa: "lisa_6eac48cf75904052" };
   fs.mkdirSync(config);
   const herdr = path.join(project, "herdr-fake");
   fs.writeFileSync(herdr, `#!${process.execPath}\n` +
@@ -22,7 +23,7 @@ test("Ralph Pane requests a task update without exposing a lease; Lisa is refuse
     `const role=process.env.TEST_ROLE||'ralph';` +
     `if(a[0]==='pane'&&a[1]==='current')console.log(JSON.stringify({result:{pane}}));` +
     `else if(a[0]==='agent'&&a[1]==='get')console.log(JSON.stringify({result:{agent:{` +
-    `name:role,agent:role==='ralph'?'claude':'codex',pane_id:'p1',workspace_id:'w1',` +
+    `name:process.env.TEST_AGENT_TARGET||role,agent:role==='ralph'?'claude':'codex',pane_id:'p1',workspace_id:'w1',` +
     `terminal_id:'t1',cwd:project,agent_status:process.env.TEST_STATUS||'working',` +
     `interactive_ready:true,agent_session:process.env.TEST_NATIVE==='1'?` +
     `{agent:'claude',kind:'id',source:'herdr:claude',value:'native-test-session'}:undefined}}}));` +
@@ -42,10 +43,10 @@ test("Ralph Pane requests a task update without exposing a lease; Lisa is refuse
       "--owner-id", crypto.randomUUID(), "--json");
     run("host", "bind-seat", "--project", project, "--lease-id", lease.lease_id,
       "--role", "ralph", "--workspace-id", "w1", "--pane-id", "p1",
-      "--agent-target", "ralph", "--json");
+      "--agent-target", targets.ralph, "--json");
     run("host", "bind-seat", "--project", project, "--lease-id", lease.lease_id,
       "--role", "lisa", "--workspace-id", "w1", "--pane-id", "p2",
-      "--agent-target", "lisa", "--json");
+      "--agent-target", targets.lisa, "--json");
     const baseline = run("host", "snapshot", "--project", project, "--json");
     run("host", "prepare-generation", "--project", project, "--lease-id", lease.lease_id,
       "--expected-digest", baseline.state_digest, "--json");
@@ -56,9 +57,11 @@ test("Ralph Pane requests a task update without exposing a lease; Lisa is refuse
       "--mode", "switch", "--request-id", requestId];
     const env = { ...process.env, HERDR_ENV: "1", HERDR_PANE_ID: "p1",
       HERDR_WORKSPACE_ID: "w1", HERDR_BIN_PATH: herdr, HERDR_SOCKET_PATH: "test-socket",
-      HERDR_PLUGIN_CONFIG_DIR: config, TEST_PROJECT: project };
+      HERDR_PLUGIN_CONFIG_DIR: config, TEST_PROJECT: project,
+      TEST_AGENT_TARGET: targets.ralph };
     const wrong = spawnSync(process.execPath, args,
-      { cwd: project, env: { ...env, TEST_ROLE: "lisa" }, encoding: "utf8" });
+      { cwd: project, env: { ...env, TEST_ROLE: "lisa",
+        TEST_AGENT_TARGET: targets.lisa }, encoding: "utf8" });
     assert.equal(wrong.status, 4);
     assert.equal(JSON.parse(wrong.stdout).code, "CALLER_AGENT_MISMATCH");
     const accepted = spawnSync(process.execPath, args,
@@ -73,6 +76,7 @@ test("Ralph Pane requests a task update without exposing a lease; Lisa is refuse
     assert.equal(record.content_sha256,
       crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex"));
     assert.equal(record.generation, 0);
+    assert.equal(record.agent_target, targets.ralph);
     const blockedWithoutSession = spawnSync(process.execPath, args,
       { cwd: project, env: { ...env, TEST_STATUS: "blocked" }, encoding: "utf8" });
     assert.equal(blockedWithoutSession.status, 4);

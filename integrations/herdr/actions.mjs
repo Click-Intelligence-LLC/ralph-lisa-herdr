@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { nativeSessionReference } from "./native-session.mjs";
 import { resolveCliArgv } from "./cli-command.mjs";
 import { targetsFromEnvironment } from "./seat-targets.mjs";
+import { recoverySeats } from "./recovery-seats.mjs";
 
 const pluginRoot = path.dirname(fileURLToPath(import.meta.url));
 const MIN_HERDR = [0, 9, 4];
@@ -282,36 +283,6 @@ function recoveryPluginState(projectRealpath, cliEvidence) {
     evidence_sha256: digest.digest("hex") };
 }
 
-function recoverySeats(herdr, projectRealpath, recordPlan) {
-  if (!recordPlan?.seats || !recordPlan.workspace_id) return null;
-  const seats = {};
-  for (const [role, kind] of [["ralph", "claude"], ["lisa", "codex"]]) {
-    const result = invoke(herdr, ["agent", "get", role]);
-    const agent = readJson(result)?.result?.agent;
-    let cwd = null;
-    try { cwd = fs.realpathSync.native(agent.cwd); } catch { /* Unavailable is not proof of exit. */ }
-    const nativeSession = nativeSessionReference(result.code === 0 ? agent : null, kind);
-    const recordedFingerprint = recordPlan.seats[role]?.native_session_fingerprint_sha256;
-    seats[role] = { observation: result.code !== 0 || !agent ? "unavailable" :
-      agent.name === role && agent.agent === kind &&
-      agent.workspace_id === recordPlan.workspace_id &&
-      agent.pane_id === recordPlan.seats[role]?.pane_id && cwd === projectRealpath ?
-        (recordPlan.seats[role]?.terminal_id &&
-          agent.terminal_id !== recordPlan.seats[role].terminal_id ?
-            "terminal_changed" : "matches_binding") :
-        "identity_changed",
-      status: agent?.agent_status ?? null,
-      interactive_ready: agent?.interactive_ready === true,
-      pane_id: agent?.pane_id ?? null,
-      terminal_id: agent?.terminal_id ?? null,
-      native_session: { ...nativeSession,
-        continuity: recordedFingerprint ?
-          nativeSession.fingerprint_sha256 === recordedFingerprint ?
-            "matches_record" : "changed_or_missing" : "not_recorded" } };
-  }
-  return seats;
-}
-
 function coordinatorProcess(pid) {
   if (!Number.isSafeInteger(pid) || pid < 1) return "unknown";
   try { process.kill(pid, 0); return "pid_exists"; }
@@ -360,7 +331,7 @@ function recoveryAudit(diagnosis, project) {
           snapshot.seats?.ralph?.pane_id !== plan.seats.ralph.pane_id ||
           snapshot.seats?.lisa?.pane_id !== plan.seats.lisa.pane_id))
       throw new Error("PLUGIN_HOST_BINDING_MISMATCH");
-    const seats = recoverySeats(diagnosis.herdr, evidence.project_realpath, plan);
+    const seats = recoverySeats(invoke, diagnosis.herdr, evidence.project_realpath, plan);
     const processObservation = coordinatorProcess(plugin.record?.pid);
     const blockers = [];
     if (processObservation !== "pid_absent")
@@ -633,7 +604,7 @@ function continuationAudit(diagnosis, project) {
           item.id === snapshot.last_receipt_id && item.generation === snapshot.generation &&
           item.status === "accepted")))
       blockers.push("DELIVERY_RECORD_MISSING");
-    const seats = recoverySeats(diagnosis.herdr, snapshot.project_realpath, record.plan);
+    const seats = recoverySeats(invoke, diagnosis.herdr, snapshot.project_realpath, record.plan);
     for (const role of ["ralph", "lisa"]) {
       const seat = seats?.[role];
       const prompted = role === "ralph" || handoffs.some((item) => item.role === role);

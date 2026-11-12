@@ -90,6 +90,17 @@ async function main() {
   if (paneRead.code !== 0 || pane?.pane_id !== process.env.HERDR_PANE_ID ||
       pane?.workspace_id !== process.env.HERDR_WORKSPACE_ID || !pane.terminal_id)
     return fail("CALLER_PANE_MISMATCH");
+  const cli = resolveCliArgv(settings.rll_cli_argv);
+  const snap = call(cli, ["host", "snapshot", "--project", requested.project, "--json"]);
+  const snapshot = snap.value;
+  if (snap.code !== 0 || snapshot?.status !== "ok")
+    return fail(snapshot?.code || "RLL_SNAPSHOT_UNAVAILABLE");
+  const target = snapshot.seats?.ralph?.agent_target;
+  if (snapshot.project_realpath !== requested.project || snapshot.host_state !== "claimed" ||
+      snapshot.binding_state !== "bound" || !Number.isSafeInteger(snapshot.generation) ||
+      !SHA256.test(snapshot.state_digest ?? "") || snapshot.workspace_id !== pane.workspace_id ||
+      snapshot.seats?.ralph?.pane_id !== pane.pane_id ||
+      typeof target !== "string" || !target) return fail("SEAT_BINDING_MISMATCH");
   const agentRead = call(herdr, ["agent", "get", pane.pane_id]);
   const agent = agentRead.value?.result?.agent;
   let cwd = null;
@@ -99,20 +110,10 @@ async function main() {
       agent.agent_session?.agent === "claude" && agent.agent_session?.kind === "id" &&
       agent.agent_session?.source === "herdr:claude" &&
       typeof agent.agent_session?.value === "string" && !!agent.agent_session.value);
-  if (agentRead.code !== 0 || agent?.name !== "ralph" || agent.agent !== "claude" ||
+  if (agentRead.code !== 0 || agent?.name !== target || agent.agent !== "claude" ||
       agent.pane_id !== pane.pane_id || agent.workspace_id !== pane.workspace_id ||
       agent.terminal_id !== pane.terminal_id || cwd !== requested.project ||
       !activeStatus) return fail("CALLER_AGENT_MISMATCH");
-  const cli = resolveCliArgv(settings.rll_cli_argv);
-  const snap = call(cli, ["host", "snapshot", "--project", requested.project, "--json"]);
-  const snapshot = snap.value;
-  if (snap.code !== 0 || snapshot?.status !== "ok") return fail(snapshot?.code || "RLL_SNAPSHOT_UNAVAILABLE");
-  if (snapshot.project_realpath !== requested.project || snapshot.host_state !== "claimed" ||
-      snapshot.binding_state !== "bound" || !Number.isSafeInteger(snapshot.generation) ||
-      !SHA256.test(snapshot.state_digest ?? "") ||
-      snapshot.workspace_id !== pane.workspace_id ||
-      snapshot.seats?.ralph?.pane_id !== pane.pane_id ||
-      snapshot.seats?.ralph?.agent_target !== "ralph") return fail("SEAT_BINDING_MISMATCH");
   const queue = path.join(snapshot.state_realpath, "host", "task-update-requests");
   try {
     if (!fs.existsSync(queue)) { fs.mkdirSync(queue, { mode: 0o700 }); syncDirectory(path.dirname(queue)); }
@@ -125,26 +126,27 @@ async function main() {
     const record = { schema: 1, status: "requested", request_id: requested.requestId,
       project_realpath: requested.project, session_id: snapshot.session_id,
       workspace_id: pane.workspace_id, pane_id: pane.pane_id, terminal_id: pane.terminal_id,
-      agent_target: "ralph", generation: snapshot.generation,
+      agent_target: target, generation: snapshot.generation,
       binding_generation: snapshot.binding_generation, state_digest: snapshot.state_digest,
       last_receipt_id: snapshot.last_receipt_id, mode: requested.mode,
       file: requested.file, content_sha256: requested.contentSha256,
       source_verification: "unverified", requested_at: new Date().toISOString() };
-    const target = path.join(queue, `${requested.requestId}.json`);
+    const requestPath = path.join(queue, `${requested.requestId}.json`);
     if (names.length === 1) {
-      const priorStat = fs.lstatSync(target);
+      const priorStat = fs.lstatSync(requestPath);
       if (!priorStat.isFile() || priorStat.isSymbolicLink()) return fail("TASK_REQUEST_STORE_INVALID", 7);
-      const prior = JSON.parse(fs.readFileSync(target, "utf8"));
+      const prior = JSON.parse(fs.readFileSync(requestPath, "utf8"));
       if (prior.request_id !== record.request_id || prior.project_realpath !== record.project_realpath ||
           prior.session_id !== record.session_id || prior.mode !== record.mode ||
-          prior.content_sha256 !== record.content_sha256 || prior.generation !== record.generation)
+          prior.content_sha256 !== record.content_sha256 || prior.generation !== record.generation ||
+          prior.agent_target !== record.agent_target)
         return fail("DUPLICATE_CONFLICT", 5);
     } else {
-      const pending = `${target}.pending`;
+      const pending = `${requestPath}.pending`;
       const fd = fs.openSync(pending, "wx", 0o600);
       try { fs.writeFileSync(fd, `${JSON.stringify(record)}\n`); fs.fsyncSync(fd); }
       finally { fs.closeSync(fd); }
-      fs.renameSync(pending, target);
+      fs.renameSync(pending, requestPath);
       syncDirectory(queue);
     }
     output({ status: "task_update_requested", request_id: requested.requestId,
