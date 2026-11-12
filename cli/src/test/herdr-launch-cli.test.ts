@@ -116,7 +116,7 @@ if (args.length === 1 && args[0] === "--version") {
         [cli, "auto", "--host", "herdr", "--project", root, "New task"],
         { cwd: root, encoding: "utf8", timeout: 15000 });
       assert.equal(result.status, 4);
-      assert.match(result.stderr, /SESSION_EXISTS/);
+      assert.match(result.stderr, /RECOVERY_REQUIRED/);
       assert.equal(fs.readFileSync(path.join(state, "sentinel"), "utf8"), "preserve me");
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
