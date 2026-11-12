@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { nativeSessionReference } from "./native-session.mjs";
 import { resolveCliArgv } from "./cli-command.mjs";
-import { targetsFromEnvironment } from "./seat-targets.mjs";
+import { targetsFromEnvironment, targetsFromPlan } from "./seat-targets.mjs";
 import { recoverySeats } from "./recovery-seats.mjs";
 
 const pluginRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -18,8 +18,8 @@ function emit(value, exitCode = 0) {
   process.exitCode = exitCode;
 }
 
-function invoke(argv, args) {
-  const env = { ...process.env };
+function invoke(argv, args, options = {}) {
+  const env = { ...process.env, ...options.env };
   delete env.TMUX;
   delete env.TMUX_PANE;
   delete env.RL_STATE_DIR;
@@ -456,8 +456,11 @@ function rebindAudit(diagnosis, project) {
         recovery.last_heartbeat_at !== archived.heartbeat_at ||
         !/^[0-9a-f]{64}$/.test(recovery.evidence_sha256 ?? ""))
       throw new Error("RECOVERY_PROOF_INVALID");
+    const recoveredTargets = targetsFromPlan(old.plan);
     const preflight = invoke([process.execPath, path.join(pluginRoot, "actions.mjs")],
-      ["seat-preflight"]);
+      ["seat-preflight"], { env: {
+        RLL_AGENT_TARGETS_JSON: JSON.stringify(recoveredTargets),
+      } });
     const proposed = readJson(preflight);
     const plan = preflight.code === 0 && proposed?.status === "ready" ?
       proposed.binding_plan : null;

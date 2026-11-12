@@ -33,3 +33,14 @@ export function targetForRole(plan, role) {
   if (typeof target !== "string" || !target) throw new Error("AGENT_TARGET_INVALID");
   return target;
 }
+
+export function targetsFromPlan(plan) {
+  const targets = {
+    ralph: plan?.seats?.ralph?.agent_target,
+    lisa: plan?.seats?.lisa?.agent_target,
+  };
+  const legacyCount = Number(targets.ralph === "ralph") + Number(targets.lisa === "lisa");
+  if (!validSeatTargets(targets, true) || legacyCount === 1)
+    throw new Error("AGENT_TARGET_INVALID");
+  return targets;
+}
