@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type HerdrSeatTargets, validSeatTargets } from "./seat-target.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -21,6 +22,7 @@ export type LaunchWorkspace = {
   workspace_id: string;
   root_pane_id: string;
   root_terminal_id: string;
+  agent_targets?: HerdrSeatTargets;
 };
 
 export type LaunchPane = { schema: 1; request_id: string; coordinator_pane_id: string };
@@ -94,11 +96,14 @@ export function readProjectLaunchIntent(project: string): LaunchIntent {
 }
 
 export function recordLaunchWorkspace(project: string, requestId: string,
-  workspaceId: string, rootPaneId: string, rootTerminalId: string): LaunchWorkspace {
+  workspaceId: string, rootPaneId: string, rootTerminalId: string,
+  agentTargets: HerdrSeatTargets): LaunchWorkspace {
   readLaunchIntent(project, requestId);
   if (!workspaceId || !rootPaneId || !rootTerminalId) throw new Error("WORKSPACE_ID_REQUIRED");
+  if (!validSeatTargets(agentTargets)) throw new Error("AGENT_TARGET_INVALID");
   const record: LaunchWorkspace = { schema: 1, request_id: requestId,
-    workspace_id: workspaceId, root_pane_id: rootPaneId, root_terminal_id: rootTerminalId };
+    workspace_id: workspaceId, root_pane_id: rootPaneId, root_terminal_id: rootTerminalId,
+    agent_targets: agentTargets };
   writeExclusive(stateFile(project, "herdr-launch-workspace.json"), record);
   return record;
 }
@@ -107,7 +112,8 @@ export function readLaunchWorkspace(project: string, requestId: string): LaunchW
   readLaunchIntent(project, requestId);
   const record = readRegular<LaunchWorkspace>(stateFile(project, "herdr-launch-workspace.json"));
   if (record.schema !== 1 || record.request_id !== requestId ||
-      !record.workspace_id || !record.root_pane_id || !record.root_terminal_id)
+      !record.workspace_id || !record.root_pane_id || !record.root_terminal_id ||
+      (record.agent_targets !== undefined && !validSeatTargets(record.agent_targets)))
     throw new Error("LAUNCH_WORKSPACE_MISMATCH");
   return record;
 }

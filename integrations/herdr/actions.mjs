@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { nativeSessionReference } from "./native-session.mjs";
 import { resolveCliArgv } from "./cli-command.mjs";
+import { targetsFromEnvironment } from "./seat-targets.mjs";
 
 const pluginRoot = path.dirname(fileURLToPath(import.meta.url));
 const MIN_HERDR = [0, 9, 4];
@@ -736,12 +737,16 @@ function seatPreflight(diagnosis, snapshot) {
   const workspaceId = process.env.HERDR_WORKSPACE_ID || context?.workspace_id;
   if (!workspaceId || (context?.workspace_id && context.workspace_id !== workspaceId))
     return { status: "not_ready", code: "WORKSPACE_REQUIRED" };
+  let targets;
+  try { targets = targetsFromEnvironment(); }
+  catch { return { status: "not_ready", code: "AGENT_TARGET_INVALID" }; }
   const seats = {};
   for (const [role, kind] of [["ralph", "claude"], ["lisa", "codex"]]) {
-    const observed = invoke(diagnosis.herdr, ["agent", "get", role]);
+    const target = targets[role];
+    const observed = invoke(diagnosis.herdr, ["agent", "get", target]);
     const agent = readJson(observed)?.result?.agent;
     if (observed.code !== 0 || !agent) return { status: "not_ready", code: "AGENT_MISSING", role };
-    if (agent.name !== role || agent.agent !== kind || agent.workspace_id !== workspaceId ||
+    if (agent.name !== target || agent.agent !== kind || agent.workspace_id !== workspaceId ||
         typeof agent.pane_id !== "string" || !agent.pane_id ||
         typeof agent.terminal_id !== "string" || !agent.terminal_id) {
       return { status: "not_ready", code: "AGENT_IDENTITY_MISMATCH", role };
@@ -756,7 +761,7 @@ function seatPreflight(diagnosis, snapshot) {
     if (nativeSession.status === "invalid")
       return { status: "not_ready", code: "AGENT_SESSION_INVALID", role };
     seats[role] = { pane_id: agent.pane_id, terminal_id: agent.terminal_id,
-      agent_target: role, agent_kind: kind,
+      agent_target: target, agent_kind: kind,
       native_session_fingerprint_sha256: nativeSession.fingerprint_sha256 };
   }
   if (seats.ralph.pane_id === seats.lisa.pane_id)

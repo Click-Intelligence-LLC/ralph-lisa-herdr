@@ -54,6 +54,8 @@ else process.exitCode = 2;
         [alias, "--project", project, "Plan a README"],
         { cwd: root, encoding: "utf8", timeout: 15000,
           env: { ...process.env, HERDR_BIN_PATH: fakeHerdr,
+            HERDR_ENV: "0", HERDR_WORKSPACE_ID: "",
+            RLL_HERDR_REUSE_WORKSPACE_ID: "",
             FAKE_PROJECT: project, FAKE_WRITER: writer } });
       assert.equal(run.status, 0, run.stdout + run.stderr);
       assert.equal(JSON.parse(run.stdout).status, "started");

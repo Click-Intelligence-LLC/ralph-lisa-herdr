@@ -24,6 +24,7 @@ function run(action, options = {}) {
     HERDR_WORKSPACE_ID: options.workspaceId ?? "",
     HERDR_PLUGIN_CONTEXT_JSON: options.context ?? "",
     RLL_LAUNCH_REQUEST_ID: options.launchRequestId ?? "",
+    RLL_AGENT_TARGETS_JSON: options.targets ? JSON.stringify(options.targets) : "",
     FAKE_HERDR_VERSION: options.version ?? "herdr 0.9.4",
     FAKE_HERDR_INTEGRATIONS: options.integrations ?? "installed",
     FAKE_HERDR_WORKSPACE: project,
@@ -57,8 +58,8 @@ beforeEach(() => {
     `else if (args[0] === 'integration') console.log(process.env.FAKE_HERDR_INTEGRATIONS === 'installed' ? 'claude: installed\\ncodex: installed' : process.env.FAKE_HERDR_INTEGRATIONS === 'current' ? 'claude: current (v10)\\ncodex: current (v9)' : 'claude: not installed\\ncodex: not installed');\n` +
     `else if (args[0] === 'workspace') console.log(JSON.stringify({result:{workspace:{cwd:process.env.FAKE_HERDR_WORKSPACE}}}));\n` +
     `else if (args[0] === 'agent' && args[1] === 'get') {\n` +
-    `  const role = args[2], scenario = process.env.FAKE_HERDR_AGENT_SCENARIO;\n` +
-    `  const agent = {name:role,agent:role === 'ralph' ? 'claude' : 'codex',workspace_id:'w1',pane_id:role === 'ralph' ? 'w1:p1' : 'w1:p2',terminal_id:role === 'ralph' ? 'term-r' : 'term-l',cwd:process.env.FAKE_HERDR_WORKSPACE,interactive_ready:true,agent_status:'idle'};\n` +
+    `  const target = args[2], role = target.startsWith('ralph') ? 'ralph' : 'lisa', scenario = process.env.FAKE_HERDR_AGENT_SCENARIO;\n` +
+    `  const agent = {name:target,agent:role === 'ralph' ? 'claude' : 'codex',workspace_id:'w1',pane_id:role === 'ralph' ? 'w1:p1' : 'w1:p2',terminal_id:role === 'ralph' ? 'term-r' : 'term-l',cwd:process.env.FAKE_HERDR_WORKSPACE,interactive_ready:true,agent_status:'idle'};\n` +
     `  if (scenario === 'wrong-kind' && role === 'lisa') agent.agent = 'claude';\n` +
     `  if (scenario === 'same-pane' && role === 'lisa') agent.pane_id = 'w1:p1';\n` +
     `  if (scenario === 'blocked' && role === 'lisa') agent.agent_status = 'blocked';\n` +
@@ -196,6 +197,14 @@ test("seat preflight verifies real CLI state and two distinct Herdr agent identi
     JSON.parse(spawnSync(process.execPath, [cli, "host", "snapshot", "--project", project, "--json"], {
       encoding: "utf8",
     }).stdout).state_digest);
+  const targets = { ralph: "ralph_6eac48cf75904052", lisa: "lisa_6eac48cf75904052" };
+  const aliased = run("seat-preflight", { context, targets });
+  assert.equal(aliased.code, 0);
+  assert.equal(aliased.value.binding_plan.seats.ralph.agent_target, targets.ralph);
+  assert.equal(aliased.value.binding_plan.seats.lisa.agent_target, targets.lisa);
+  assert.equal(run("seat-preflight", { context,
+    targets: { ralph: "invalid", lisa: targets.lisa } }).value.code,
+  "AGENT_TARGET_INVALID");
   assert.equal(run("seat-preflight", { context, agentScenario: "wrong-kind" }).value.code,
     "AGENT_IDENTITY_MISMATCH");
   assert.equal(run("seat-preflight", { context, agentScenario: "same-pane" }).value.code,

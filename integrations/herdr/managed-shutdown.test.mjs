@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { targetsForSession } from "./seat-targets.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.resolve(root, "../../cli/dist/cli.js");
@@ -82,15 +83,16 @@ for (const scenario of ["normal", "hangup", "changed", "before_prompt", "authori
   const ralphBusy = path.join(temp, "ralph-busy");
   const commitCalls = path.join(temp, "commit-calls");
   fs.writeFileSync(fakeHerdr, `#!${process.execPath}\n` +
-    `const a=process.argv.slice(2);const role=a[2];const project=process.env.FAKE_PROJECT;` +
-    `const agent=(r)=>({name:r,agent:r==='ralph'?'claude':'codex',workspace_id:'w1',` +
-    `pane_id:r==='ralph'?'w1:p1':'w1:p2',terminal_id:r==='ralph'?'term-r':'term-l',` +
-    `cwd:project,interactive_ready:true,agent_status:r==='ralph'&&` +
+    `const a=process.argv.slice(2);const target=a[2];const project=process.env.FAKE_PROJECT;` +
+    `const role=(t)=>t.startsWith('ralph_')||t==='ralph'?'ralph':'lisa';` +
+    `const agent=(t)=>({name:t,agent:role(t)==='ralph'?'claude':'codex',workspace_id:'w1',` +
+    `pane_id:role(t)==='ralph'?'w1:p1':'w1:p2',terminal_id:role(t)==='ralph'?'term-r':'term-l',` +
+    `cwd:project,interactive_ready:true,agent_status:role(t)==='ralph'&&` +
     `require('node:fs').existsSync(process.env.FAKE_RALPH_BUSY)?'working':'idle'});` +
     `if(a[0]==='--version')console.log('herdr 0.9.4');` +
     `else if(a[0]==='integration')console.log('claude: installed\\ncodex: installed');` +
-    `else if(a[0]==='agent'&&a[1]==='get')console.log(JSON.stringify({result:{agent:agent(role)}}));` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,'1');console.log(JSON.stringify({result:{type:'agent_prompted',agent:agent(role)}}));}` +
+    `else if(a[0]==='agent'&&a[1]==='get')console.log(JSON.stringify({result:{agent:agent(target)}}));` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,'1');console.log(JSON.stringify({result:{type:'agent_prompted',agent:agent(target)}}));}` +
     `else process.exitCode=2;\n`);
   fs.writeFileSync(fakeCli, `#!${process.execPath}\n` +
     `const {spawnSync}=require('node:child_process');const a=process.argv.slice(2);` +
@@ -116,6 +118,7 @@ for (const scenario of ["normal", "hangup", "changed", "before_prompt", "authori
   assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr);
   const state = path.join(project, ".dual-agent");
   const identity = JSON.parse(fs.readFileSync(path.join(state, "session.json"), "utf8"));
+  const agentTargets = targetsForSession(identity.session_id);
   const requestId = crypto.randomUUID();
   fs.writeFileSync(path.join(state, "herdr-launch-intent.json"), JSON.stringify({ schema: 1,
     request_id: requestId, project_realpath: fs.realpathSync.native(project),
@@ -127,7 +130,8 @@ for (const scenario of ["normal", "hangup", "changed", "before_prompt", "authori
       scenario.startsWith("commit_")
       ? { auto_commit_granted_via: "cli_auto_host_herdr" } : {}) }));
   fs.writeFileSync(path.join(state, "herdr-launch-workspace.json"), JSON.stringify({ schema: 1,
-    request_id: requestId, workspace_id: "w1", root_pane_id: "w1:p1", root_terminal_id: "term-r" }));
+    request_id: requestId, workspace_id: "w1", root_pane_id: "w1:p1", root_terminal_id: "term-r",
+    agent_targets: agentTargets }));
   const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
     CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
     HERDR_PLUGIN_CONFIG_DIR: config, HERDR_PLUGIN_STATE_DIR: pluginState,
@@ -284,7 +288,7 @@ for (const scenario of ["normal", "hangup", "changed", "before_prompt", "authori
           schema: 1, status: "requested", request_id: changeId,
           project_realpath: before.project_realpath, session_id: before.session_id,
           workspace_id: "w1", pane_id: "w1:p1", terminal_id: "term-r",
-          agent_target: "ralph", generation: before.generation,
+          agent_target: active.plan.seats.ralph.agent_target, generation: before.generation,
           binding_generation: before.binding_generation, state_digest: before.state_digest,
           last_receipt_id: before.last_receipt_id, mode: "switch", file: fs.realpathSync.native(taskFile),
           content_sha256: crypto.createHash("sha256").update(body).digest("hex"),
@@ -388,20 +392,22 @@ test("managed preclaim close retains an auditable result and resumes the same re
     `const fs=require('node:fs');const a=process.argv.slice(2);` +
     `const project=process.env.FAKE_PROJECT;const started=process.env.FAKE_STARTED_FLAG;` +
     `const ready=process.env.FAKE_READY_FLAG,lisa=process.env.FAKE_LISA_FLAG;` +
-    `const present=(r)=>fs.existsSync(r==='ralph'?started:lisa);` +
-    `const agent=(r)=>({name:r,agent:r==='ralph'?'claude':'codex',workspace_id:'w1',` +
-    `pane_id:r==='ralph'?'w1:p1':'w1:p2',terminal_id:r==='ralph'?'term-r':'term-l',` +
-    `cwd:project,interactive_ready:r==='lisa'||fs.existsSync(ready),` +
-    `agent_status:r==='lisa'||fs.existsSync(ready)?'idle':'blocked'});` +
+    `const role=(t)=>t.startsWith('ralph_')||t==='ralph'?'ralph':'lisa';` +
+    `const present=(t)=>fs.existsSync(role(t)==='ralph'?started:lisa);` +
+    `const agent=(t)=>({name:t,agent:role(t)==='ralph'?'claude':'codex',workspace_id:'w1',` +
+    `pane_id:role(t)==='ralph'?'w1:p1':'w1:p2',terminal_id:role(t)==='ralph'?'term-r':'term-l',` +
+    `cwd:project,interactive_ready:role(t)==='lisa'||fs.existsSync(ready),` +
+    `agent_status:role(t)==='lisa'||fs.existsSync(ready)?'idle':'blocked'});` +
     `const pane=(id)=>({workspace_id:'w1',pane_id:id,terminal_id:id==='w1:p1'?'term-r':'term-l',` +
-    `cwd:project,agent:id==='w1:p1'&&present('ralph')?'ralph':id==='w1:p2'&&present('lisa')?'lisa':null});` +
+    `cwd:project,agent:id==='w1:p1'&&fs.existsSync(started)?process.env.FAKE_RALPH_TARGET:` +
+    `id==='w1:p2'&&fs.existsSync(lisa)?process.env.FAKE_LISA_TARGET:null});` +
     `const out=(result)=>console.log(JSON.stringify({result}));` +
     `if(a[0]==='--version')console.log('herdr 0.9.4');` +
     `else if(a[0]==='integration')console.log('claude: installed\\ncodex: installed');` +
     `else if(a[0]==='workspace'&&a[1]==='get')out({workspace:{workspace_id:'w1'}});` +
     `else if(a[0]==='pane'&&a[1]==='get')out({pane:pane(a[2])});` +
     `else if(a[0]==='pane'&&a[1]==='split')out({pane:pane('w1:p2')});` +
-    `else if(a[0]==='agent'&&a[1]==='start'){fs.appendFileSync(process.env.FAKE_START_ARGS,JSON.stringify(a)+'\\n');fs.writeFileSync(a[2]==='ralph'?started:lisa,'1');out({agent:agent(a[2])});}` +
+    `else if(a[0]==='agent'&&a[1]==='start'){fs.appendFileSync(process.env.FAKE_START_ARGS,JSON.stringify(a)+'\\n');fs.writeFileSync(role(a[2])==='ralph'?started:lisa,'1');out({agent:agent(a[2])});}` +
     `else if(a[0]==='agent'&&a[1]==='get'){if(present(a[2]))out({agent:agent(a[2])});` +
     `else{console.error(JSON.stringify({error:{code:'agent_not_found'}}));process.exitCode=1;}}` +
     `else if(a[0]==='agent'&&a[1]==='prompt'){fs.appendFileSync(process.env.FAKE_PROMPT_FILE,'1');out({type:'agent_prompted',agent:agent(a[2])});}` +
@@ -416,6 +422,7 @@ test("managed preclaim close retains an auditable result and resumes the same re
   assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr);
   const state = path.join(project, ".dual-agent");
   const identity = JSON.parse(fs.readFileSync(path.join(state, "session.json"), "utf8"));
+  const agentTargets = targetsForSession(identity.session_id);
   const requestId = crypto.randomUUID();
   fs.writeFileSync(path.join(state, "herdr-launch-intent.json"), JSON.stringify({ schema: 1,
     request_id: requestId, project_realpath: fs.realpathSync.native(project),
@@ -423,13 +430,15 @@ test("managed preclaim close retains an auditable result and resumes the same re
     task_sha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(state, "task.md"))).digest("hex"),
     permission_profile: "full_auto", auto_commit: false }));
   fs.writeFileSync(path.join(state, "herdr-launch-workspace.json"), JSON.stringify({ schema: 1,
-    request_id: requestId, workspace_id: "w1", root_pane_id: "w1:p1", root_terminal_id: "term-r" }));
+    request_id: requestId, workspace_id: "w1", root_pane_id: "w1:p1", root_terminal_id: "term-r",
+    agent_targets: agentTargets }));
   const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
     CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
     HERDR_PLUGIN_CONFIG_DIR: config, HERDR_PLUGIN_STATE_DIR: pluginState,
     HERDR_WORKSPACE_ID: "w1", HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
       workspace_id: "w1", workspace_cwd: project }),
     RLL_LAUNCH_REQUEST_ID: requestId, FAKE_PROJECT: project,
+    FAKE_RALPH_TARGET: agentTargets.ralph, FAKE_LISA_TARGET: agentTargets.lisa,
     FAKE_STARTED_FLAG: startedFlag, FAKE_READY_FLAG: readyFlag,
     FAKE_LISA_FLAG: lisaFlag, FAKE_PROMPT_FILE: promptFile,
     FAKE_START_ARGS: startArgsFile };
@@ -464,9 +473,9 @@ test("managed preclaim close retains an auditable result and resumes the same re
     assert.equal(started.status, "started", JSON.stringify(started));
     const startArgs = fs.readFileSync(startArgsFile, "utf8").trim().split("\n")
       .map((line) => JSON.parse(line));
-    assert.deepEqual(startArgs.find((args) => args[2] === "ralph")?.slice(-2),
+    assert.deepEqual(startArgs.find((args) => args[2] === agentTargets.ralph)?.slice(-2),
       ["--", "--dangerously-skip-permissions"]);
-    assert.deepEqual(startArgs.find((args) => args[2] === "lisa")?.slice(-6),
+    assert.deepEqual(startArgs.find((args) => args[2] === agentTargets.lisa)?.slice(-6),
       ["--", "--no-daemon", "--sandbox", "workspace-write", "--ask-for-approval", "never"]);
     assert.equal(fs.readFileSync(promptFile, "utf8"), "1");
     const currentResult = JSON.parse(fs.readFileSync(path.join(state, "herdr-launch-result.json")));

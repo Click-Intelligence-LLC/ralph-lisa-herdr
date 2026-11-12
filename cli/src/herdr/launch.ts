@@ -8,6 +8,7 @@ import { stateDir } from "../state.js";
 import { initSessionIfAbsent } from "./session-init.js";
 import { createLaunchIntent, readLaunchResult, recordLaunchPane, recordLaunchWorkspace } from "./launch-record.js";
 import type { HerdrLaunchOptions } from "./options.js";
+import { targetsForSession, type HerdrSeatTargets } from "./seat-target.js";
 
 type HerdrResponse = { result?: Record<string, any>; running?: boolean; status?: string };
 
@@ -99,15 +100,15 @@ export type HerdrLaunchReceipt = {
   code?: string;
 };
 
-function blockedAgent(workspaceId: string, project: string):
+function blockedAgent(workspaceId: string, project: string, targets: HerdrSeatTargets):
   { role: "ralph" | "lisa"; paneId: string } | null {
   for (const [role, kind] of [["ralph", "claude"], ["lisa", "codex"]] as const) {
     let agent: any;
-    try { agent = command(["agent", "get", role], 5000).result?.agent; }
+    try { agent = command(["agent", "get", targets[role]], 5000).result?.agent; }
     catch { continue; }
     let cwd: string | null = null;
     try { cwd = fs.realpathSync.native(agent?.cwd); } catch { /* Ignore unrelated agents. */ }
-    if (agent?.name === role && agent?.agent === kind &&
+    if (agent?.name === targets[role] && agent?.agent === kind &&
         agent?.workspace_id === workspaceId && cwd === project &&
         agent?.agent_status === "blocked" && typeof agent.pane_id === "string")
       return { role, paneId: agent.pane_id };
@@ -134,6 +135,7 @@ export async function launchHerdrTask(options: HerdrLaunchOptions): Promise<Herd
       process.env.RLL_HERDR_START_ENTRYPOINT === "plugin_start_task"
         ? "plugin_start_task" : "cli_auto_host_herdr");
   } finally { release(); }
+  const agentTargets = targetsForSession(sessionId);
 
   const created = reuseWorkspaceId
     ? command(["tab", "create", "--workspace", reuseWorkspaceId,
@@ -146,7 +148,8 @@ export async function launchHerdrTask(options: HerdrLaunchOptions): Promise<Herd
       !workspaceId || !rootPane?.pane_id || !rootPane?.terminal_id ||
       rootPane.workspace_id !== workspaceId)
     throw new HerdrLaunchError("WORKSPACE_CREATE_UNCERTAIN", requestId);
-  recordLaunchWorkspace(project, requestId, workspaceId, rootPane.pane_id, rootPane.terminal_id);
+  recordLaunchWorkspace(project, requestId, workspaceId, rootPane.pane_id,
+    rootPane.terminal_id, agentTargets);
 
   const opened = command(["plugin", "pane", "open", "--plugin", "ralph-lisa.loop",
     "--entrypoint", "coordinator", "--placement", "tab", "--workspace", workspaceId,
@@ -170,7 +173,7 @@ export async function launchHerdrTask(options: HerdrLaunchOptions): Promise<Herd
   if (result) return { ...authorization, status: result.status, request_id: requestId, project_realpath: project,
     session_id: sessionId, workspace_id: workspaceId, coordinator_pane_id: pane.pane_id,
     ...(result.code ? { code: result.code } : {}) };
-  const blocked = blockedAgent(workspaceId, project);
+  const blocked = blockedAgent(workspaceId, project, agentTargets);
   if (blocked) return { ...authorization, status: "pending", code: "AGENT_BLOCKED_UNCONFIRMED",
     request_id: requestId, project_realpath: project, session_id: sessionId,
     workspace_id: workspaceId, coordinator_pane_id: pane.pane_id,

@@ -70,7 +70,8 @@ test("accepted task delivery can close an interrupted queue before lease recover
     const pluginDir = path.join(stateRoot, "sessions", key);
     fs.mkdirSync(pluginDir, { recursive: true });
     const plan = { workspace_id: "w1", seats: {
-      ralph: { pane_id: "p1" }, lisa: { pane_id: "p2" },
+      ralph: { pane_id: "p1", agent_target: "ralph" },
+      lisa: { pane_id: "p2", agent_target: "lisa" },
     } };
     const record = { schema: 1, phase: "paused", project_realpath: project,
       session_id: before.session_id, lease_id: lease.lease_id, owner_id: owner,
@@ -170,8 +171,8 @@ test("uncommitted request can be abandoned only after matching no-write evidence
       binding_generation: binding.binding_generation,
       cursor_generation: 0, cursor_receipt_id: null, cursor_turn: "ralph",
       plan: { workspace_id: "w1", seats: {
-        ralph: { pane_id: "p1", terminal_id: "term-r" },
-        lisa: { pane_id: "p2" },
+        ralph: { pane_id: "p1", terminal_id: "term-r", agent_target: "ralph" },
+        lisa: { pane_id: "p2", agent_target: "lisa" },
       } },
     }));
     assert.equal(invoke("host", "recovery-check", "--project", project, "--json").status, 7);

@@ -84,6 +84,7 @@ test("preclaim pane-busy retry reuses both seats and delivers the task once", as
     const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
       CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
       HERDR_PLUGIN_CONFIG_DIR: configDir, HERDR_PLUGIN_STATE_DIR: stateDir,
+      HERDR_WORKSPACE_ID: "w1",
       HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: "w1", workspace_cwd: project }),
       FAKE_PROJECT: project, FAKE_HERDR_STATE: fakeState, FAKE_LISA_BUSY: busy };
     const first = result(process.execPath, [coordinator, "start"], env);

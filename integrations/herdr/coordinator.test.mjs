@@ -77,14 +77,20 @@ test("active snapshot failure names mismatched fields and CLI status without val
 function waitForLine(child, predicate, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     let buffer = "";
+    let stderr = "";
+    const observed = [];
     const timer = setTimeout(() => finish(new Error("coordinator output timeout")), timeoutMs);
     function finish(error, value) {
       clearTimeout(timer);
       child.stdout.off("data", onData);
-      child.off("exit", onExit);
+      child.stderr.off("data", onErrorData);
+      child.off("close", onExit);
       if (error) reject(error); else resolve(value);
     }
-    function onExit(code) { finish(new Error(`coordinator exited before output: ${code}`)); }
+    function onExit(code) {
+      finish(new Error(`coordinator exited before output: ${code}; output=${buffer}; observed=${JSON.stringify(observed)}; stderr=${stderr}`));
+    }
+    function onErrorData(chunk) { stderr += chunk.toString(); }
     function onData(chunk) {
       buffer += chunk.toString();
       for (;;) {
@@ -93,11 +99,13 @@ function waitForLine(child, predicate, timeoutMs = 15000) {
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
         const value = JSON.parse(line);
+        observed.push(value);
         if (predicate(value)) return finish(null, value);
       }
     }
     child.stdout.on("data", onData);
-    child.on("exit", onExit);
+    child.stderr.on("data", onErrorData);
+    child.on("close", onExit);
   });
 }
 
@@ -136,6 +144,7 @@ test("coordinator claims and binds observed seats, heartbeats, then releases on 
   const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
     CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
     HERDR_PLUGIN_CONFIG_DIR: configDir, HERDR_PLUGIN_STATE_DIR: stateDir,
+    HERDR_WORKSPACE_ID: "w1",
     HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: "w1", workspace_cwd: project }),
     FAKE_PROJECT: project, FAKE_PROMPTS: prompts, FAKE_BUSY_FILE: busyFile,
     FAKE_LISA_SESSION_READY: lisaSessionReady };
@@ -379,6 +388,7 @@ test("start waits for blocked startup and a transient busy seat after claim", as
   const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
     CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
     HERDR_PLUGIN_CONFIG_DIR: configDir, HERDR_PLUGIN_STATE_DIR: stateDir,
+    HERDR_WORKSPACE_ID: "w1",
     HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: "w1", workspace_cwd: project }),
     FAKE_PROJECT: project, FAKE_HERDR_STATE: fakeState };
   const child = spawn(process.execPath, [coordinator, "start"], { env, stdio: ["ignore", "pipe", "pipe"] });
@@ -459,6 +469,7 @@ for (const failure of ["initial-timeout", "timeout", "wrong-pane", "paused-commi
   const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
     CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
     HERDR_PLUGIN_CONFIG_DIR: configDir, HERDR_PLUGIN_STATE_DIR: stateDir,
+    HERDR_WORKSPACE_ID: "w1",
     HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: "w1", workspace_cwd: project }),
     FAKE_PROJECT: project, FAKE_PROMPTS: prompts,
     FAKE_PROMPT_FAILURE: ["server-restart-nonzero-paused",
