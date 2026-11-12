@@ -628,4 +628,3 @@ docs(herdr): record concurrent project acceptance
 - 旧会话兼容测试通过。
 - 启动失败可在严格门禁下安全接续。
 - 本地测试、GitHub CI、真实 Herdr 验收和发布后冒烟测试均有独立证据。
-
