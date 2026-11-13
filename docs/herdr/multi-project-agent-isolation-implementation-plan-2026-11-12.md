@@ -607,11 +607,14 @@ docs(herdr): record concurrent project acceptance
 
 截至 2026-11-13，代码与发布前门禁状态如下：
 
-- CLI 构建、CLI 524/524、插件 65/65、96 个发布文件检查通过。
+- CLI 构建、CLI 524/524、插件 66/66、96 个发布文件检查通过。
+- CLI `0.3.15` 已要求插件至少为 `0.1.9`；旧插件不会接收新 target 启动契约。
+- 插件 action/pane 直接启动已按 session 派生 target，且混合新旧 target 失败关闭。
+- 同一 fake Herdr Server 的双项目测试已创建四个唯一 target，完成两项目各自双向交接并验证停止/错误重启隔离。
 - 同 Server 双项目真实验收和旧会话兼容回归通过。
-- 公司 GitHub 待发布运行时提交 `24c194f7bd6ec858b96cb7a7c6e591ce4657e97a` 隔离安装成功，插件 `0.1.9` 的 doctor 为 `ready`；后续只追加验收文档。
+- 公司 GitHub 最终运行时提交 `c06090023cfd39e8b32147ecda7a6ac88da16618` 隔离安装成功，插件 `0.1.9` 的 doctor 为 `ready`。
 - CLI `0.3.15` 本地 tarball 已安装到全新 prefix，两个命令入口通过。
-- 分支头 `faab748` 的远端 Node 18/20/22 CI（运行 `43354005553`）已通过。
+- 分支头 `c060900` 的远端 Node 18/20/22 CI（运行 `43373839986`）已通过。
 - PR 审阅与合并、tag、公共 npm 发布和发布后公共来源冒烟仍是发布门禁，不得用本地 tarball 结果替代。
 
 建议发布顺序：

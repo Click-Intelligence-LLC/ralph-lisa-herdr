@@ -17,6 +17,9 @@
 | 初始验收提交 | `8037ae8` |
 | 重绑 target 修复 | `bce1047` |
 | Host 超时重试修复 | `1f13228` |
+| CLI/插件最低版本门禁 | `aea828b` |
+| 插件直接启动隔离修复 | `5a432db` |
+| 双项目自动化回归 | `c060900` |
 | 隔离根目录 | `/private/tmp/rmp-R7vJWG` |
 | 命名 Server | `rll-mp-r7vjwg` |
 | 项目 A | `/private/tmp/rmp-R7vJWG/project-a` |
@@ -80,26 +83,39 @@
 
 随后通过插件停止 A；A Host 为 `unclaimed`、Binding 为 `stale`、generation 3。B 仍为 `unclaimed`、generation 6。
 
+### 5.5 合并前审阅补强
+
+合并前逐项复核实施文档后又关闭了四个缺口：
+
+1. CLI `0.3.15` 现在要求插件至少为 `0.1.9`，不会再把带会话级 target 的启动请求交给会忽略该字段的 `0.1.8`。
+2. 不经过 `herdr-rll`、直接从 Herdr 插件 action/pane 启动的新会话，也从 RLL session ID 派生独立 Ralph/Lisa target；旧 `ralph`/`lisa` 仅作为成对历史记录兼容。
+3. target 校验集中到一个成对不变量：两个都是会话级 target，或两个都是旧固定 target；一新一旧的混合记录失败关闭。
+4. 新增同一 fake Herdr Server 的双项目测试，实际创建四个 target，分别完成 A/B 的 Ralph→Lisa→Ralph，并验证停止或错误重启 A 不改变 B 的 generation 和租约。
+
+安全直接重启 A 会返回 `EXISTING_GENERATION_REQUIRES_RECOVERY`，必须走既有显式恢复链；成功的租约回收、重绑和非零游标接续由本记录第 5.4 节的真实验收及既有重启自动化覆盖。
+
 ## 6. 自动化验证
 
 | 验证层 | 结果 |
 |---|---|
 | CLI 聚焦测试 | 失败启动安全接续 11/11 通过 |
 | CLI 全量测试 | 524/524 通过 |
-| 插件全量测试 | 最终 65/65 通过 |
+| 插件全量测试 | 最终 66/66 通过 |
 | npm 内容检查 | 96 个发布文件通过 |
-| GitHub CI | 运行时代码 `1f13228` 与分支头 `faab748` 的 Node 18/20/22 均全部通过；最终验收运行 `43354005553` |
+| GitHub CI | 最终运行时提交 `c060900` 的 Node 18/20/22 全部通过；运行 `43373839986` |
 | 真实 Herdr | 同 Server 四 target、双项目双向交接、单项目恢复隔离通过 |
-| 待发布运行时提交安装 | `24c194f7bd6ec858b96cb7a7c6e591ce4657e97a` 安装成功；插件 `0.1.9`；doctor `ready`；同仓 CLI `0.3.15` |
+| 待发布运行时提交安装 | `c06090023cfd39e8b32147ecda7a6ac88da16618` 从公司 GitHub 仓库固定提交安装成功；插件 `0.1.9`；doctor `ready`；同仓 CLI `0.3.15` |
 | CLI 本地 tarball 隔离安装 | `ralph-lisa-loop-0.3.15.tgz` 安装到全新 prefix；`ralph-lisa --version` 与 `herdr-rll --help` 通过 |
 
-CLI 本地 tarball 的 SHA-256 为 `9a5e6ba404051048e0700a3ff9470e0a8d55e1531934f756833b37173b36c278`，npm integrity 为 `sha512-BoupYy/P2XOW3ZRC6mWGF2UUUkWzb4A6CDA6GNWUEXEsCRP7enN3VC720Kba1SEAyIGEktrdJJkm0PTbcqqVBg==`。该 tarball 是发布前本地构建物，不是 npm 公共仓库回包。
+CLI 本地 tarball 的 SHA-256 为 `811f2c443c887acbfa14ee9c98f272c05a1f5000067b8a725b977a40466686f6`，npm integrity 为 `sha512-650dVmv3CeePKbiuUwQYCvX13qzDUdO/lkRE6QaHNDc3KEXN0gQ4yl2kzy8Yj0EJ973wuyzAzTLVgchJgSYB3A==`。该 tarball 是最终运行时提交的发布前本地构建物，不是 npm 公共仓库回包。
 
 ## 7. 已通过与未证明
 
 已通过：
 
 - 新会话使用会话级唯一 Agent target；
+- CLI 会拒绝低于 `0.1.9`、无法理解会话级 target 的插件；
+- Herdr 插件 action/pane 直接启动同样使用会话级唯一 target；
 - 启动、候选、任务更新、提示投递和恢复按 Binding target 路由；
 - 同 Server 两个项目可同时保留四个 Agent；
 - 两个项目各自完成至少一次双向交接；
@@ -117,11 +133,11 @@ CLI 本地 tarball 的 SHA-256 为 `9a5e6ba404051048e0700a3ff9470e0a8d55e1531934
 
 ## 8. 发布判断
 
-代码、真实验收、版本号一致性、待发布运行时提交的 GitHub 固定提交安装、CLI 本地 tarball 隔离 prefix 安装和分支头 Node 18/20/22 CI 均已完成。本记录之后只允许追加验收文档；若再修改运行时代码或版本元数据，必须重新安装复验。发布前仍需 PR 审阅和合并。发布动作本身仍需维护者创建 tag、发布 npm，并在发布后从公共来源重新执行冒烟测试。
+代码、真实验收、版本号一致性、最终运行时提交 `c060900` 的 GitHub 固定提交安装、CLI 本地 tarball 隔离 prefix 安装和分支头 Node 18/20/22 CI 均已完成。若再修改运行时代码或版本元数据，必须重新安装复验。发布前仍需完成 PR 最终审阅和合并。发布动作本身仍需维护者创建 tag、发布 npm，并在发布后从公共来源重新执行冒烟测试。
 
 ## 9. 清理与默认环境恢复
 
-两个命名测试 Server `rll-mp-r7vjwg`、`rmpf-kl32ns` 均已停止，未发现指向测试目录或命名 Server 的残留进程。临时目录 `/private/tmp/rmp-R7vJWG` 和 `/private/tmp/rmpf.Kl32ns` 已永久删除。
+三个命名测试 Server `rll-mp-r7vjwg`、`rmpf-kl32ns`、`rmpv-sx` 均已停止，未发现指向测试目录或命名 Server 的残留进程。临时目录 `/private/tmp/rmp-R7vJWG`、`/private/tmp/rmpf.Kl32ns` 和最终安装复验目录 `/private/tmp/rmpv.sxrvSj` 均在证据写入后删除。
 
 预发布安装环境停机后执行 `plugin uninstall` 时，Herdr CLI 实际连接了默认注册表，短暂移除了默认 `ralph-lisa.loop`。发现后没有启动默认任务或升级默认版本，而是按清理前只读记录恢复：
 
