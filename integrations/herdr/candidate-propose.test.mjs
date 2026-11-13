@@ -14,6 +14,7 @@ test("pane candidate proposal observes the bound Agent but keeps source unverifi
   const project = path.join(temp, "project");
   const configDir = path.join(temp, "config");
   const fakeHerdr = path.join(temp, "herdr");
+  const targets = { ralph: "ralph_6eac48cf75904052", lisa: "lisa_6eac48cf75904052" };
   fs.mkdirSync(project);
   fs.mkdirSync(configDir);
   fs.writeFileSync(path.join(configDir, "settings.json"), JSON.stringify({
@@ -39,7 +40,7 @@ test("pane candidate proposal observes the bound Agent but keeps source unverifi
   const env = { ...process.env, HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1",
     HERDR_WORKSPACE_ID: "w1", HERDR_BIN_PATH: fakeHerdr,
     HERDR_SOCKET_PATH: path.join(temp, "fake.sock"),
-    FAKE_PROJECT: project, FAKE_CONFIG: configDir };
+    FAKE_PROJECT: project, FAKE_CONFIG: configDir, FAKE_AGENT_NAME: targets.ralph };
   const candidateId = "4a1a9922-42cf-436b-a689-01896695f407";
   const runHelper = (customEnv = env, id = candidateId) => {
     const result = spawnSync(process.execPath, [helper, "propose", "--project", project,
@@ -53,9 +54,9 @@ test("pane candidate proposal observes the bound Agent but keeps source unverifi
     const claimed = runCli("claim", ["--host", "herdr", "--owner-id",
       "8a3c801e-7c42-4802-8751-96e3f31a5bd1"]);
     runCli("bind-seat", ["--lease-id", claimed.lease_id, "--role", "ralph",
-      "--workspace-id", "w1", "--pane-id", "w1:p1", "--agent-target", "ralph"]);
+      "--workspace-id", "w1", "--pane-id", "w1:p1", "--agent-target", targets.ralph]);
     runCli("bind-seat", ["--lease-id", claimed.lease_id, "--role", "lisa",
-      "--workspace-id", "w1", "--pane-id", "w1:p2", "--agent-target", "lisa"]);
+      "--workspace-id", "w1", "--pane-id", "w1:p2", "--agent-target", targets.lisa]);
     const snapshot = runCli("snapshot");
     runCli("prepare-generation", ["--lease-id", claimed.lease_id,
       "--expected-digest", snapshot.state_digest]);
@@ -67,8 +68,8 @@ test("pane candidate proposal observes the bound Agent but keeps source unverifi
       "CALLER_PANE_MISMATCH");
     assert.equal(runHelper({ ...env, FAKE_AGENT_TERMINAL: "term-replaced" }).value.code,
       "CALLER_AGENT_MISMATCH");
-    assert.equal(runHelper({ ...env, FAKE_AGENT_NAME: "lisa", FAKE_AGENT_KIND: "codex" }).value.code,
-      "SEAT_BINDING_MISMATCH");
+    assert.equal(runHelper({ ...env, FAKE_AGENT_NAME: targets.lisa,
+      FAKE_AGENT_KIND: "codex" }).value.code, "CALLER_AGENT_MISMATCH");
     const idle = runHelper({ ...env, FAKE_AGENT_STATUS: "idle" });
     assert.equal(idle.status, 4);
     assert.equal(idle.value.code, "CALLER_AGENT_NOT_WORKING");

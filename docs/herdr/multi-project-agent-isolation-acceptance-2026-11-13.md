@@ -1,0 +1,172 @@
+# Herdr 多项目 Agent 隔离真实验收（2026-11-13）
+
+## 1. 结论
+
+在同一个隔离的 Herdr Server 中，两个不同项目同时保留各自的 Ralph/Claude 与 Lisa/Codex，共四个唯一 Agent target。两个项目均完成了至少一次 Ralph→Lisa→Ralph 双向自动交接，未观察到跨项目提示、候选、回执、generation 或恢复接管。
+
+多项目隔离目标通过。本次验收同时发现并修复了两个只在真实恢复链路出现的问题：重绑预检错误回退到旧固定 Agent 名，以及 Host 快照子进程已经输出 JSON 但超时未退出时被误判为活动快照不一致。修复后，项目 A 在不影响项目 B 的情况下完成显式租约回收、重绑、非零游标接续和有界运行观察。
+
+同日后续手工复验在另一个命名 Server 中同时启动项目 A、B。四个唯一 Agent target 保持隔离，两个项目均自动推进到 generation 8、达成共识、返回 `completed` 并释放各自租约。该复验发现从现有 Herdr Pane 启动时，当前 Server 可能返回 `wB` 这类非十进制 Workspace ID；CLI 原先错误地只接受 `w[1-9][0-9]*`。提交 `687c42b` 按 Herdr 的“不透明稳定句柄”契约修复校验，并保留长度、首尾空白、控制字符和真实 Server 回读门禁。
+
+这不是干净虚拟机或发布后公共版本验收，也不证明长期无人值守稳定性。项目 A 的旧租约候选在暂停后才落盘，恢复时被安全保留为过期候选，没有自动提交；因此本记录不把项目 A 的业务任务本身标为完成。
+
+## 2. 验收范围与隔离边界
+
+| 项目 | 实际值 |
+|---|---|
+| 仓库 | `Click-Intelligence-LLC/ralph-lisa-herdr` |
+| 分支 | `feat/herdr-multi-project-seats` |
+| 初始验收提交 | `8037ae8` |
+| 重绑 target 修复 | `bce1047` |
+| Host 超时重试修复 | `1f13228` |
+| CLI/插件最低版本门禁 | `aea828b` |
+| 插件直接启动隔离修复 | `5a432db` |
+| 双项目自动化回归 | `c060900` |
+| 隔离根目录 | `/private/tmp/rmp-R7vJWG` |
+| 命名 Server | `rll-mp-r7vjwg` |
+| 项目 A | `/private/tmp/rmp-R7vJWG/project-a` |
+| 项目 B | `/private/tmp/rmp-R7vJWG/project-b` |
+
+验收使用独立 `XDG_CONFIG_HOME`、`XDG_STATE_HOME`、`XDG_CACHE_HOME`、显式 `HERDR_CONFIG_PATH` 和命名 Server。插件从公司 GitHub 仓库固定提交安装；真实任务和 Agent 均未使用默认 Herdr Server，`super-rll` 未操作。清理阶段发生过一次默认插件注册误卸载，已按清理前记录的同一来源和固定提交原样恢复，详见第 9 节。
+
+## 3. 席位与绑定证据
+
+同一个 Server 中实际存在四个唯一 target：
+
+| 项目 | RLL 角色 | Herdr Agent target |
+|---|---|---|
+| A | Ralph | `ralph_77a1662df9464430` |
+| A | Lisa | `lisa_77a1662df9464430` |
+| B | Ralph | `ralph_c5c44987eb9d44bb` |
+| B | Lisa | `lisa_c5c44987eb9d44bb` |
+
+每个项目的 Host Binding、插件启动记录和投递链均保存本项目 target。项目 B 在项目 A 两个 Agent Pane 仍存在时正常启动，没有出现旧版的 `AGENT_IDENTITY_MISMATCH`。
+
+## 4. 双项目交接结果
+
+1. 项目 A 完成 Ralph→Lisa 和 Lisa→Ralph，generation 从 0 前进到 2。
+2. 项目 B 完成 Ralph→Lisa 和 Lisa→Ralph，generation 从 0 前进到 2。
+3. 项目 A 继续推进时，项目 B 的 generation 和投递记录保持不变。
+4. 项目 B 后续完成至 generation 6，Host 正常释放为 `unclaimed`；生成的 `README.md` 为精确的 19 字节正文 `Project B isolated.`。
+5. 未观察到 A 的提示进入 B Pane、B 的候选被 A 提交，或任一项目使用另一项目的 target。
+
+候选自动提交继续明确记录 `source_verification=unverified`。本次只验证会话授权的自动轮次和隔离，不把 Herdr 的 Agent 观察当作候选作者身份密码学证明。
+
+## 5. 项目 A 恢复与接续
+
+### 5.1 暂停后的边界
+
+项目 A 在 Lisa 工作期间暂停。旧协调器停止后，一份候选在旧租约上下文中才被登记。恢复链没有把这份候选自动转换为新租约的可提交候选，也没有重放交接提示。最终 A 保持 generation 3、candidate count 4，`README.md` 未生成。
+
+这是预期的失败关闭行为：恢复保证不重复提交和不跨租约猜测，不保证自动接纳暂停窗口内的迟到候选。
+
+### 5.2 真实问题一：重绑预检丢失动态 target
+
+首次真实重绑时，`rebind-check` 内部调用 `seat-preflight` 没有带入持久化的会话级 target，因而回退查询旧名称 `ralph`/`lisa` 并返回 `AGENT_MISSING`。
+
+提交 `bce1047` 修复为：从恢复计划读取两席 target，通过受限环境传给预检，重绑和接续继续以 Binding target 为准。插件全量测试 64/64 通过，远端 Node 18/20/22 CI 通过。
+
+### 5.3 真实问题二：已输出快照的子进程超时
+
+第一次非零游标接续后，Host snapshot 子进程打印了有效 JSON，但未在 10 秒内退出；`spawnSync` 返回 `ETIMEDOUT`。旧逻辑把这类结果归入 `ACTIVE_SNAPSHOT_MISMATCH`，协调器退出。
+
+提交 `1f13228` 将 `ETIMEDOUT` 与 `HOST_BUSY` 一样视为可重试的只读 Host 结果：本轮不接受可能不完整的输出、不推进游标，下一个轮询周期重新读取。其他错误仍失败关闭。插件聚焦测试 32/32、全量测试 65/65 通过，远端 Node 18/20/22 CI 全部通过。
+
+### 5.4 修复后复验
+
+修复后仅对项目 A 执行第二次显式恢复：
+
+- 旧协调器和旧 Agent 进程已退出后，按证据回收旧租约；
+- Claude 原生会话直接恢复；Codex 在同一原生会话引用重新出现后才进入重绑；
+- `rebind-check` 使用 A 的动态 target，通过后建立替代租约并保持 `rebound_paused`；
+- `continuation-check` 通过后，从 generation 3 接续，未重放历史提示；
+- 12 秒有界观察中，A 心跳序号从 19 前进到 22，协调器保持 active；
+- 同期 B 保持 `unclaimed`、generation 6，未新增提示或回执。
+
+随后通过插件停止 A；A Host 为 `unclaimed`、Binding 为 `stale`、generation 3。B 仍为 `unclaimed`、generation 6。
+
+### 5.5 合并前审阅补强
+
+合并前逐项复核实施文档后又关闭了四个缺口：
+
+1. CLI `0.3.15` 现在要求插件至少为 `0.1.9`，不会再把带会话级 target 的启动请求交给会忽略该字段的 `0.1.8`。
+2. 不经过 `herdr-rll`、直接从 Herdr 插件 action/pane 启动的新会话，也从 RLL session ID 派生独立 Ralph/Lisa target；旧 `ralph`/`lisa` 仅作为成对历史记录兼容。
+3. target 校验集中到一个成对不变量：两个都是会话级 target，或两个都是旧固定 target；一新一旧的混合记录失败关闭。
+4. 新增同一 fake Herdr Server 的双项目测试，实际创建四个 target，分别完成 A/B 的 Ralph→Lisa→Ralph，并验证停止或错误重启 A 不改变 B 的 generation 和租约。
+
+安全直接重启 A 会返回 `EXISTING_GENERATION_REQUIRES_RECOVERY`，必须走既有显式恢复链；成功的租约回收、重绑和非零游标接续由本记录第 5.4 节的真实验收及既有重启自动化覆盖。
+
+### 5.6 手工双项目完成复验与不透明 Workspace ID
+
+后续手工复验使用隔离根目录 `/private/tmp/hman.hvwCuz`、命名 Server `hman-hvwcuz`，项目为 `project-a` 和 `project-b`。由于本轮访问 GitHub 下载超时，插件从最终分支 checkout 本地链接，不把这次复验记为新的公共来源安装验收。
+
+实际结果：
+
+- 项目 A 使用 `ralph_9b48eb1c611949fd`、`lisa_9b48eb1c611949fd`，最终 generation 8、`completed`、Host `unclaimed`；
+- 项目 B 使用 `ralph_27cb68e091e44189`、`lisa_27cb68e091e44189`，最终 generation 8、`completed`、Host `unclaimed`；
+- 两个项目交错推进时，候选、回执、轮次和提示均留在各自 Workspace；A 先完成并释放后，B 继续运行至完成；
+- A 的 README 为一行目标文本并带常规行末换行，B 的 README 为精确 28 字节目标文本且无尾随换行；两席分别完成内容核验和最终共识；
+- 测试 Server 正常停止，默认 Herdr Server 未操作，测试根目录暂留用于追溯。
+
+从当前 Herdr Pane 启动第一次复验时，CLI 继承 `HERDR_WORKSPACE_ID=wB`，旧正则将其误判为 `WORKSPACE_ID_INVALID`。Herdr 本地 skill 明确规定公共 Workspace/Tab/Pane ID 是 opaque stable handle，因此不能推测其数字编码。修复后的 CLI：
+
+1. 接受 `wB` 等安全的不透明 ID；
+2. 继续拒绝空值、超过 512 字节、首尾空白或含控制字符的 ID；
+3. 仍通过 `workspace get <id>` 和项目 Pane 列表核对 ID 与项目归属；
+4. 以独立 argv 元素传给 Herdr，不经过 shell 拼接。
+
+定向回归覆盖 `HERDR_ENV=1`、`HERDR_WORKSPACE_ID=wB` 的成功复用，以及含换行 ID 在项目初始化前被拒绝。修复提交为 `687c42b`。
+
+## 6. 自动化验证
+
+| 验证层 | 结果 |
+|---|---|
+| CLI 聚焦测试 | 不透明 Workspace ID 启动回归 7/7 通过；失败启动安全接续既有回归继续通过 |
+| CLI 全量测试 | 526/526 通过 |
+| 插件全量测试 | 最终 66/66 通过 |
+| npm 内容检查 | 96 个发布文件通过 |
+| GitHub CI | 最终运行时提交 `c060900` 与 Workspace ID 修复提交 `687c42b` 的 Node 18/20/22 全部通过；修复运行 `43386559731` |
+| 真实 Herdr | 同 Server 四 target、双项目双向交接、单项目恢复隔离通过；后续手工复验两个项目均自动完成并释放 |
+| 待发布运行时提交安装 | `c06090023cfd39e8b32147ecda7a6ac88da16618` 从公司 GitHub 仓库固定提交安装成功；插件 `0.1.9`；doctor `ready`；同仓 CLI `0.3.15` |
+| CLI 本地 tarball 隔离安装 | `ralph-lisa-loop-0.3.15.tgz` 安装到全新 prefix；`ralph-lisa --version` 与 `herdr-rll --help` 通过 |
+
+CLI 本地 tarball 的 SHA-256 为 `811f2c443c887acbfa14ee9c98f272c05a1f5000067b8a725b977a40466686f6`，npm integrity 为 `sha512-650dVmv3CeePKbiuUwQYCvX13qzDUdO/lkRE6QaHNDc3KEXN0gQ4yl2kzy8Yj0EJ973wuyzAzTLVgchJgSYB3A==`。该 tarball 是最终运行时提交的发布前本地构建物，不是 npm 公共仓库回包。
+
+## 7. 已通过与未证明
+
+已通过：
+
+- 新会话使用会话级唯一 Agent target；
+- CLI 会拒绝低于 `0.1.9`、无法理解会话级 target 的插件；
+- Herdr 插件 action/pane 直接启动同样使用会话级唯一 target；
+- 启动、候选、任务更新、提示投递和恢复按 Binding target 路由；
+- 同 Server 两个项目可同时保留四个 Agent；
+- 两个项目各自完成至少一次双向交接；
+- 恢复项目 A 时项目 B 状态不变；
+- 旧租约迟到候选不会被新租约自动提交；
+- 旧固定 target 记录的兼容回归通过。
+
+仍未证明：
+
+- 干净 macOS 虚拟机的首次安装体验；
+- 长时间、多于两个项目的压力与稳定性；
+- 插件 `0.1.9` 和 npm `0.3.15` 发布后的公共来源冒烟；
+- 暂停窗口内迟到候选的产品化恢复交互；
+- 候选文本的独立作者身份验证。
+
+## 8. 发布判断
+
+代码、真实验收、版本号一致性、最终运行时提交 `c060900` 的 GitHub 固定提交安装、CLI 本地 tarball 隔离 prefix 安装和分支头 Node 18/20/22 CI 均已完成。若再修改运行时代码或版本元数据，必须重新安装复验。发布前仍需完成 PR 最终审阅和合并。发布动作本身仍需维护者创建 tag、发布 npm，并在发布后从公共来源重新执行冒烟测试。
+
+## 9. 清理与默认环境恢复
+
+三个命名测试 Server `rll-mp-r7vjwg`、`rmpf-kl32ns`、`rmpv-sx` 均已停止，未发现指向测试目录或命名 Server 的残留进程。临时目录 `/private/tmp/rmp-R7vJWG`、`/private/tmp/rmpf.Kl32ns` 和最终安装复验目录 `/private/tmp/rmpv.sxrvSj` 均在证据写入后删除。
+
+预发布安装环境停机后执行 `plugin uninstall` 时，Herdr CLI 实际连接了默认注册表，短暂移除了默认 `ralph-lisa.loop`。发现后没有启动默认任务或升级默认版本，而是按清理前只读记录恢复：
+
+- 来源：`yueweilu/Ralph-Lisa-Loop/integrations/herdr`
+- requested/ref 与 resolved commit：`fa8e8bb0383ab990efbbabb442deea18d570bee2`
+- 插件版本：`0.1.8`
+- enabled：`true`
+
+恢复后 `herdr plugin list --json` 与上述来源、提交和版本一致。默认 Server 未因本次清理停止或重启。该事件也说明：仅设置 XDG 目录不足以保证停机后的插件管理命令仍连接预期注册表；隔离操作必须同时使用显式 `HERDR_CONFIG_PATH`、命名 Server，并在卸载前核对命令实际连接目标。

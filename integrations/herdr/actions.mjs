@@ -5,6 +5,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { nativeSessionReference } from "./native-session.mjs";
 import { resolveCliArgv } from "./cli-command.mjs";
+import { targetsFromEnvironment, targetsFromPlan } from "./seat-targets.mjs";
+import { recoverySeats } from "./recovery-seats.mjs";
 
 const pluginRoot = path.dirname(fileURLToPath(import.meta.url));
 const MIN_HERDR = [0, 9, 4];
@@ -16,8 +18,8 @@ function emit(value, exitCode = 0) {
   process.exitCode = exitCode;
 }
 
-function invoke(argv, args) {
-  const env = { ...process.env };
+function invoke(argv, args, options = {}) {
+  const env = { ...process.env, ...options.env };
   delete env.TMUX;
   delete env.TMUX_PANE;
   delete env.RL_STATE_DIR;
@@ -281,36 +283,6 @@ function recoveryPluginState(projectRealpath, cliEvidence) {
     evidence_sha256: digest.digest("hex") };
 }
 
-function recoverySeats(herdr, projectRealpath, recordPlan) {
-  if (!recordPlan?.seats || !recordPlan.workspace_id) return null;
-  const seats = {};
-  for (const [role, kind] of [["ralph", "claude"], ["lisa", "codex"]]) {
-    const result = invoke(herdr, ["agent", "get", role]);
-    const agent = readJson(result)?.result?.agent;
-    let cwd = null;
-    try { cwd = fs.realpathSync.native(agent.cwd); } catch { /* Unavailable is not proof of exit. */ }
-    const nativeSession = nativeSessionReference(result.code === 0 ? agent : null, kind);
-    const recordedFingerprint = recordPlan.seats[role]?.native_session_fingerprint_sha256;
-    seats[role] = { observation: result.code !== 0 || !agent ? "unavailable" :
-      agent.name === role && agent.agent === kind &&
-      agent.workspace_id === recordPlan.workspace_id &&
-      agent.pane_id === recordPlan.seats[role]?.pane_id && cwd === projectRealpath ?
-        (recordPlan.seats[role]?.terminal_id &&
-          agent.terminal_id !== recordPlan.seats[role].terminal_id ?
-            "terminal_changed" : "matches_binding") :
-        "identity_changed",
-      status: agent?.agent_status ?? null,
-      interactive_ready: agent?.interactive_ready === true,
-      pane_id: agent?.pane_id ?? null,
-      terminal_id: agent?.terminal_id ?? null,
-      native_session: { ...nativeSession,
-        continuity: recordedFingerprint ?
-          nativeSession.fingerprint_sha256 === recordedFingerprint ?
-            "matches_record" : "changed_or_missing" : "not_recorded" } };
-  }
-  return seats;
-}
-
 function coordinatorProcess(pid) {
   if (!Number.isSafeInteger(pid) || pid < 1) return "unknown";
   try { process.kill(pid, 0); return "pid_exists"; }
@@ -359,7 +331,7 @@ function recoveryAudit(diagnosis, project) {
           snapshot.seats?.ralph?.pane_id !== plan.seats.ralph.pane_id ||
           snapshot.seats?.lisa?.pane_id !== plan.seats.lisa.pane_id))
       throw new Error("PLUGIN_HOST_BINDING_MISMATCH");
-    const seats = recoverySeats(diagnosis.herdr, evidence.project_realpath, plan);
+    const seats = recoverySeats(invoke, diagnosis.herdr, evidence.project_realpath, plan);
     const processObservation = coordinatorProcess(plugin.record?.pid);
     const blockers = [];
     if (processObservation !== "pid_absent")
@@ -484,8 +456,11 @@ function rebindAudit(diagnosis, project) {
         recovery.last_heartbeat_at !== archived.heartbeat_at ||
         !/^[0-9a-f]{64}$/.test(recovery.evidence_sha256 ?? ""))
       throw new Error("RECOVERY_PROOF_INVALID");
+    const recoveredTargets = targetsFromPlan(old.plan);
     const preflight = invoke([process.execPath, path.join(pluginRoot, "actions.mjs")],
-      ["seat-preflight"]);
+      ["seat-preflight"], { env: {
+        RLL_AGENT_TARGETS_JSON: JSON.stringify(recoveredTargets),
+      } });
     const proposed = readJson(preflight);
     const plan = preflight.code === 0 && proposed?.status === "ready" ?
       proposed.binding_plan : null;
@@ -632,7 +607,7 @@ function continuationAudit(diagnosis, project) {
           item.id === snapshot.last_receipt_id && item.generation === snapshot.generation &&
           item.status === "accepted")))
       blockers.push("DELIVERY_RECORD_MISSING");
-    const seats = recoverySeats(diagnosis.herdr, snapshot.project_realpath, record.plan);
+    const seats = recoverySeats(invoke, diagnosis.herdr, snapshot.project_realpath, record.plan);
     for (const role of ["ralph", "lisa"]) {
       const seat = seats?.[role];
       const prompted = role === "ralph" || handoffs.some((item) => item.role === role);
@@ -736,12 +711,16 @@ function seatPreflight(diagnosis, snapshot) {
   const workspaceId = process.env.HERDR_WORKSPACE_ID || context?.workspace_id;
   if (!workspaceId || (context?.workspace_id && context.workspace_id !== workspaceId))
     return { status: "not_ready", code: "WORKSPACE_REQUIRED" };
+  let targets;
+  try { targets = targetsFromEnvironment(snapshot.session_id); }
+  catch { return { status: "not_ready", code: "AGENT_TARGET_INVALID" }; }
   const seats = {};
   for (const [role, kind] of [["ralph", "claude"], ["lisa", "codex"]]) {
-    const observed = invoke(diagnosis.herdr, ["agent", "get", role]);
+    const target = targets[role];
+    const observed = invoke(diagnosis.herdr, ["agent", "get", target]);
     const agent = readJson(observed)?.result?.agent;
     if (observed.code !== 0 || !agent) return { status: "not_ready", code: "AGENT_MISSING", role };
-    if (agent.name !== role || agent.agent !== kind || agent.workspace_id !== workspaceId ||
+    if (agent.name !== target || agent.agent !== kind || agent.workspace_id !== workspaceId ||
         typeof agent.pane_id !== "string" || !agent.pane_id ||
         typeof agent.terminal_id !== "string" || !agent.terminal_id) {
       return { status: "not_ready", code: "AGENT_IDENTITY_MISMATCH", role };
@@ -756,7 +735,7 @@ function seatPreflight(diagnosis, snapshot) {
     if (nativeSession.status === "invalid")
       return { status: "not_ready", code: "AGENT_SESSION_INVALID", role };
     seats[role] = { pane_id: agent.pane_id, terminal_id: agent.terminal_id,
-      agent_target: role, agent_kind: kind,
+      agent_target: target, agent_kind: kind,
       native_session_fingerprint_sha256: nativeSession.fingerprint_sha256 };
   }
   if (seats.ralph.pane_id === seats.lisa.pane_id)

@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { requireActiveSnapshot } from "./snapshot-diagnostic.mjs";
+import { isRetryableHostResult, requireActiveSnapshot } from "./snapshot-diagnostic.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.resolve(root, "../../cli/dist/cli.js");
@@ -74,17 +74,34 @@ test("active snapshot failure names mismatched fields and CLI status without val
   });
 });
 
+test("host busy and process timeout defer work without accepting an uncertain result", () => {
+  assert.equal(isRetryableHostResult({ code: 4,
+    value: { status: "error", code: "HOST_BUSY" }, error: null }), true);
+  assert.equal(isRetryableHostResult({ code: null,
+    value: { status: "ok" }, error: "ETIMEDOUT" }), true);
+  assert.equal(isRetryableHostResult({ code: null,
+    value: { status: "ok" }, error: "EPERM" }), false);
+  assert.equal(isRetryableHostResult({ code: 0,
+    value: { status: "ok" }, error: null }), false);
+});
+
 function waitForLine(child, predicate, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     let buffer = "";
+    let stderr = "";
+    const observed = [];
     const timer = setTimeout(() => finish(new Error("coordinator output timeout")), timeoutMs);
     function finish(error, value) {
       clearTimeout(timer);
       child.stdout.off("data", onData);
-      child.off("exit", onExit);
+      child.stderr.off("data", onErrorData);
+      child.off("close", onExit);
       if (error) reject(error); else resolve(value);
     }
-    function onExit(code) { finish(new Error(`coordinator exited before output: ${code}`)); }
+    function onExit(code) {
+      finish(new Error(`coordinator exited before output: ${code}; output=${buffer}; observed=${JSON.stringify(observed)}; stderr=${stderr}`));
+    }
+    function onErrorData(chunk) { stderr += chunk.toString(); }
     function onData(chunk) {
       buffer += chunk.toString();
       for (;;) {
@@ -93,11 +110,13 @@ function waitForLine(child, predicate, timeoutMs = 15000) {
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
         const value = JSON.parse(line);
+        observed.push(value);
         if (predicate(value)) return finish(null, value);
       }
     }
     child.stdout.on("data", onData);
-    child.on("exit", onExit);
+    child.stderr.on("data", onErrorData);
+    child.on("close", onExit);
   });
 }
 
@@ -122,8 +141,8 @@ test("coordinator claims and binds observed seats, heartbeats, then releases on 
     `const a=process.argv.slice(2);\n` +
     `if(a[0]==='--version') console.log('herdr 0.9.4');\n` +
     `else if(a[0]==='integration') console.log('claude: not installed\\ncodex: not installed');\n` +
-    `else if(a[0]==='agent'&&a[1]==='get'){const role=a[2];const hasLisaSession=require('node:fs').existsSync(process.env.FAKE_LISA_SESSION_READY);const agent=role==='ralph'?'claude':'codex';console.log(JSON.stringify({result:{agent:{name:role,agent,workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',terminal_id:role==='ralph'?(process.env.FAKE_RALPH_TERMINAL||'term-r'):'term-l',cwd:process.env.FAKE_PROJECT,agent_session:role==='ralph'||hasLisaSession?{agent,kind:'id',source:'herdr:'+agent,value:role==='ralph'?(process.env.FAKE_RALPH_SESSION||'session-123'):'lisa-session-123'}:undefined,interactive_ready:true,agent_status:role==='lisa'&&require('node:fs').existsSync(process.env.FAKE_BUSY_FILE)?'working':'idle'}}}));}\n` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){const role=a[2];require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,JSON.stringify({role,message:a[3]})+'\\n');console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:role,agent:role==='ralph'?'claude':'codex',workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',cwd:process.env.FAKE_PROJECT,agent_status:'working'}}}));}\n` +
+    `else if(a[0]==='agent'&&a[1]==='get'){const target=a[2];const role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';const hasLisaSession=require('node:fs').existsSync(process.env.FAKE_LISA_SESSION_READY);const agent=role==='ralph'?'claude':'codex';console.log(JSON.stringify({result:{agent:{name:target,agent,workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',terminal_id:role==='ralph'?(process.env.FAKE_RALPH_TERMINAL||'term-r'):'term-l',cwd:process.env.FAKE_PROJECT,agent_session:role==='ralph'||hasLisaSession?{agent,kind:'id',source:'herdr:'+agent,value:role==='ralph'?(process.env.FAKE_RALPH_SESSION||'session-123'):'lisa-session-123'}:undefined,interactive_ready:true,agent_status:role==='lisa'&&require('node:fs').existsSync(process.env.FAKE_BUSY_FILE)?'working':'idle'}}}));}\n` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){const target=a[2];const role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,JSON.stringify({role,target,message:a[3]})+'\\n');console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:role==='ralph'?'claude':'codex',workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',cwd:process.env.FAKE_PROJECT,agent_status:'working'}}}));}\n` +
     `else process.exit(2);\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
   fs.writeFileSync(fakeCodex, `#!${process.execPath}\nconsole.log('Logged in using ChatGPT');\n`);
@@ -133,9 +152,12 @@ test("coordinator claims and binds observed seats, heartbeats, then releases on 
   const before = JSON.parse(spawnSync(process.execPath, [cli, "host", "snapshot", "--project", project, "--json"], {
     encoding: "utf8",
   }).stdout);
+  const targetToken = before.session_id.replaceAll("-", "").slice(0, 16);
+  const expectedTargets = { ralph: `ralph_${targetToken}`, lisa: `lisa_${targetToken}` };
   const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
     CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
     HERDR_PLUGIN_CONFIG_DIR: configDir, HERDR_PLUGIN_STATE_DIR: stateDir,
+    HERDR_WORKSPACE_ID: "w1",
     HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: "w1", workspace_cwd: project }),
     FAKE_PROJECT: project, FAKE_PROMPTS: prompts, FAKE_BUSY_FILE: busyFile,
     FAKE_LISA_SESSION_READY: lisaSessionReady };
@@ -159,6 +181,8 @@ test("coordinator claims and binds observed seats, heartbeats, then releases on 
     assert.equal(started.status, "started", JSON.stringify(started));
     assert.equal(fs.readFileSync(prompts, "utf8").trim().split("\n").length, 1);
     const initialPrompt = JSON.parse(fs.readFileSync(prompts, "utf8").trim()).message;
+    assert.equal(JSON.parse(fs.readFileSync(prompts, "utf8").trim()).target,
+      expectedTargets.ralph);
     assert.match(initialPrompt, /task\.md/);
     assert.match(initialPrompt, /separate RLL review candidate file/);
     assert.match(initialPrompt, /\[PLAN\].*first line/);
@@ -201,6 +225,8 @@ test("coordinator claims and binds observed seats, heartbeats, then releases on 
     assert.equal(claimed.binding_state, "bound");
     assert.equal(claimed.seats.ralph.pane_id, "w1:p1");
     assert.equal(claimed.seats.lisa.pane_id, "w1:p2");
+    assert.equal(claimed.seats.ralph.agent_target, expectedTargets.ralph);
+    assert.equal(claimed.seats.lisa.agent_target, expectedTargets.lisa);
     assert.equal(claimed.state_digest, before.state_digest);
     const sessionDir = path.join(stateDir, "sessions",
       fs.readdirSync(path.join(stateDir, "sessions"))[0]);
@@ -353,19 +379,19 @@ test("start waits for blocked startup and a transient busy seat after claim", as
     `const out=(result)=>console.log(JSON.stringify({result}));` +
     `if(a[0]==='--version') console.log('herdr 0.9.4');` +
     `else if(a[0]==='integration') console.log('claude: current (v10)\\ncodex: current (v9)');` +
-    `else if(a[0]==='agent'&&a[1]==='get'){const agent=s.agents[a[2]];` +
+    `else if(a[0]==='agent'&&a[1]==='get'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';const agent=s.agents[target];` +
       `if(agent?.agent_status==='blocked'){s.blocked_reads=(s.blocked_reads||0)+1;if(s.blocked_reads>1){agent.agent_status='idle';agent.interactive_ready=true;}save();}` +
       `const bindingFile=process.env.FAKE_PROJECT+'/.dual-agent/host/binding.json';` +
-      `if(a[2]==='lisa'&&agent?.agent_status!=='blocked'&&fs.existsSync(bindingFile)){const binding=JSON.parse(fs.readFileSync(bindingFile));` +
+      `if(role==='lisa'&&agent?.agent_status!=='blocked'&&fs.existsSync(bindingFile)){const binding=JSON.parse(fs.readFileSync(bindingFile));` +
         `if(binding.seats.ralph&&!binding.seats.lisa&&s.late_busy_reads!==2){s.late_busy_reads=(s.late_busy_reads||0)+1;save();` +
           `if(s.late_busy_reads===1){out({agent:{...agent,agent_status:'working'}});process.exit(0);}}}` +
       `if(!agent){console.error(JSON.stringify({error:{code:'agent_not_found'}}));process.exitCode=1;}else out({agent});}` +
     `else if(a[0]==='workspace'&&a[1]==='create'){s.workspaces++;save();` +
       `out({workspace:{workspace_id:'w2'},root_pane:{workspace_id:'w2',pane_id:'w2:p1'}});}` +
     `else if(a[0]==='pane'&&a[1]==='split')out({pane:{workspace_id:'w2',pane_id:'w2:p2'}});` +
-    `else if(a[0]==='agent'&&a[1]==='start'){const role=a[2];` +
-      `const agent={name:role,agent:a[4],workspace_id:'w2',pane_id:a[6],terminal_id:'term-'+role,cwd:process.env.FAKE_PROJECT,interactive_ready:role==='ralph',agent_status:role==='ralph'?'idle':'blocked'};` +
-      `s.agents[role]=agent;save();if(role==='lisa'){console.error(JSON.stringify({error:{code:'agent_not_ready'}}));process.exitCode=1;}else out({agent});}` +
+    `else if(a[0]==='agent'&&a[1]==='start'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';` +
+      `const agent={name:target,agent:a[4],workspace_id:'w2',pane_id:a[6],terminal_id:'term-'+role,cwd:process.env.FAKE_PROJECT,interactive_ready:role==='ralph',agent_status:role==='ralph'?'idle':'blocked'};` +
+      `s.agents[target]=agent;save();if(role==='lisa'){console.error(JSON.stringify({error:{code:'agent_not_ready'}}));process.exitCode=1;}else out({agent});}` +
     `else if(a[0]==='agent'&&a[1]==='prompt'){const agent=s.agents[a[2]];s.prompts=(s.prompts||0)+1;save();out({type:'agent_prompted',agent});}` +
     `else process.exit(2);\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
@@ -376,9 +402,12 @@ test("start waits for blocked startup and a transient busy seat after claim", as
   const before = JSON.parse(spawnSync(process.execPath, [cli, "host", "snapshot", "--project", project, "--json"], {
     encoding: "utf8",
   }).stdout);
+  const targetToken = before.session_id.replaceAll("-", "").slice(0, 16);
+  const expectedTargets = { ralph: `ralph_${targetToken}`, lisa: `lisa_${targetToken}` };
   const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
     CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
     HERDR_PLUGIN_CONFIG_DIR: configDir, HERDR_PLUGIN_STATE_DIR: stateDir,
+    HERDR_WORKSPACE_ID: "w1",
     HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: "w1", workspace_cwd: project }),
     FAKE_PROJECT: project, FAKE_HERDR_STATE: fakeState };
   const child = spawn(process.execPath, [coordinator, "start"], { env, stdio: ["ignore", "pipe", "pipe"] });
@@ -388,8 +417,8 @@ test("start waits for blocked startup and a transient busy seat after claim", as
     assert.equal(started.workspace_id, "w2");
     const herdrState = JSON.parse(fs.readFileSync(fakeState, "utf8"));
     assert.equal(herdrState.workspaces, 1);
-    assert.equal(herdrState.agents.ralph.pane_id, "w2:p1");
-    assert.equal(herdrState.agents.lisa.pane_id, "w2:p2");
+    assert.equal(herdrState.agents[expectedTargets.ralph].pane_id, "w2:p1");
+    assert.equal(herdrState.agents[expectedTargets.lisa].pane_id, "w2:p2");
     assert.equal(herdrState.late_busy_reads, 2);
     assert.equal(herdrState.prompts, 1);
     const claimed = JSON.parse(spawnSync(process.execPath, [cli, "host", "snapshot", "--project", project, "--json"], {
@@ -410,7 +439,8 @@ test("start waits for blocked startup and a transient busy seat after claim", as
     }).stdout);
     assert.equal(released.host_state, "unclaimed");
     assert.equal(released.state_digest, before.state_digest);
-    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(fakeState, "utf8")).agents), ["ralph", "lisa"]);
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(fakeState, "utf8")).agents),
+      [expectedTargets.ralph, expectedTargets.lisa]);
     const retryEnv = { ...env, HERDR_PLUGIN_CONTEXT_JSON:
       JSON.stringify({ workspace_id: "w2", workspace_cwd: project }) };
     const retry = spawnSync(process.execPath, [coordinator, "start"],
@@ -448,8 +478,8 @@ for (const failure of ["initial-timeout", "timeout", "wrong-pane", "paused-commi
     `const a=process.argv.slice(2);` +
     `if(a[0]==='--version')console.log('herdr 0.9.4');` +
     `else if(a[0]==='integration')console.log('claude: current (v10)\\ncodex: current (v9)');` +
-    `else if(a[0]==='agent'&&a[1]==='get'){const role=a[2];const fs=require('node:fs');const changed=fs.existsSync(process.env.FAKE_SERVER_RESTARTED);const marker=process.env.FAKE_AUDIT_MUTATION;if(role==='ralph'&&marker&&fs.existsSync(marker)){const target=fs.readFileSync(marker,'utf8').trim()==='lease'?process.env.FAKE_LEASE_PATH:process.env.FAKE_RECORD_PATH;const value=JSON.parse(fs.readFileSync(target,'utf8'));if(target===process.env.FAKE_LEASE_PATH)value.heartbeat_seq++;else value.error='changed-during-audit';fs.writeFileSync(target,JSON.stringify(value));fs.unlinkSync(marker);}const rebindMarker=process.env.FAKE_REBIND_MARKER;const continuationMarker=process.env.FAKE_CONTINUATION_MARKER;const fail=(rebindMarker&&fs.existsSync(rebindMarker)&&JSON.parse(fs.readFileSync(rebindMarker,'utf8')).status==='claimed')||(continuationMarker&&fs.existsSync(continuationMarker));const lisaSession=role==='lisa'&&process.env.FAKE_PROMPT_FAILURE==='server-restart-nonzero-continue'&&fs.existsSync(process.env.FAKE_PROMPTS)&&fs.readFileSync(process.env.FAKE_PROMPTS,'utf8').includes('lisa\\n');console.log(JSON.stringify({result:{agent:{name:role,agent:role==='ralph'?'claude':'codex',workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',terminal_id:(fail?'bad-':changed?'new-':'term-')+role,cwd:process.env.FAKE_PROJECT,agent_session:role==='ralph'?{agent:'claude',kind:'id',source:'herdr:claude',value:process.env.FAKE_RALPH_SESSION||'ralph-session-1'}:lisaSession?{agent:'codex',kind:'id',source:'herdr:codex',value:'lisa-session-1'}:undefined,interactive_ready:true,agent_status:'idle'}}}));}` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,a[2]+'\\n');if((a[2]==='ralph'&&process.env.FAKE_PROMPT_FAILURE==='initial-timeout')||(a[2]==='lisa'&&process.env.FAKE_PROMPT_FAILURE==='timeout')){console.error(JSON.stringify({error:{code:'timeout'}}));process.exitCode=1;}else if(a[2]==='ralph')console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:'ralph',agent:'claude',workspace_id:'w1',pane_id:'w1:p1',cwd:process.env.FAKE_PROJECT}}}));else console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:a[2],agent:'codex',workspace_id:'w1',pane_id:['server-restart-continue','server-restart-nonzero-continue','server-restart-task-update','server-restart-task-update-crash'].includes(process.env.FAKE_PROMPT_FAILURE)?'w1:p2':'w1:p9',cwd:process.env.FAKE_PROJECT}}}));}` +
+    `else if(a[0]==='agent'&&a[1]==='get'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';const fs=require('node:fs');const changed=fs.existsSync(process.env.FAKE_SERVER_RESTARTED);const marker=process.env.FAKE_AUDIT_MUTATION;if(role==='ralph'&&marker&&fs.existsSync(marker)){const targetFile=fs.readFileSync(marker,'utf8').trim()==='lease'?process.env.FAKE_LEASE_PATH:process.env.FAKE_RECORD_PATH;const value=JSON.parse(fs.readFileSync(targetFile,'utf8'));if(targetFile===process.env.FAKE_LEASE_PATH)value.heartbeat_seq++;else value.error='changed-during-audit';fs.writeFileSync(targetFile,JSON.stringify(value));fs.unlinkSync(marker);}const rebindMarker=process.env.FAKE_REBIND_MARKER;const continuationMarker=process.env.FAKE_CONTINUATION_MARKER;const fail=(rebindMarker&&fs.existsSync(rebindMarker)&&JSON.parse(fs.readFileSync(rebindMarker,'utf8')).status==='claimed')||(continuationMarker&&fs.existsSync(continuationMarker));const lisaSession=role==='lisa'&&process.env.FAKE_PROMPT_FAILURE==='server-restart-nonzero-continue'&&fs.existsSync(process.env.FAKE_PROMPTS)&&fs.readFileSync(process.env.FAKE_PROMPTS,'utf8').includes('lisa\\n');console.log(JSON.stringify({result:{agent:{name:target,agent:role==='ralph'?'claude':'codex',workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',terminal_id:(fail?'bad-':changed?'new-':'term-')+role,cwd:process.env.FAKE_PROJECT,agent_session:role==='ralph'?{agent:'claude',kind:'id',source:'herdr:claude',value:process.env.FAKE_RALPH_SESSION||'ralph-session-1'}:lisaSession?{agent:'codex',kind:'id',source:'herdr:codex',value:'lisa-session-1'}:undefined,interactive_ready:true,agent_status:'idle'}}}));}` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,role+'\\n');if((role==='ralph'&&process.env.FAKE_PROMPT_FAILURE==='initial-timeout')||(role==='lisa'&&process.env.FAKE_PROMPT_FAILURE==='timeout')){console.error(JSON.stringify({error:{code:'timeout'}}));process.exitCode=1;}else if(role==='ralph')console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:'claude',workspace_id:'w1',pane_id:'w1:p1',cwd:process.env.FAKE_PROJECT}}}));else console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:'codex',workspace_id:'w1',pane_id:['server-restart-continue','server-restart-nonzero-continue','server-restart-task-update','server-restart-task-update-crash'].includes(process.env.FAKE_PROMPT_FAILURE)?'w1:p2':'w1:p9',cwd:process.env.FAKE_PROJECT}}}));}` +
     `else process.exitCode=2;\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
   fs.writeFileSync(fakeCodex, `#!${process.execPath}\nconsole.log('Logged in using ChatGPT');\n`);
@@ -459,6 +489,7 @@ for (const failure of ["initial-timeout", "timeout", "wrong-pane", "paused-commi
   const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
     CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
     HERDR_PLUGIN_CONFIG_DIR: configDir, HERDR_PLUGIN_STATE_DIR: stateDir,
+    HERDR_WORKSPACE_ID: "w1",
     HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: "w1", workspace_cwd: project }),
     FAKE_PROJECT: project, FAKE_PROMPTS: prompts,
     FAKE_PROMPT_FAILURE: ["server-restart-nonzero-paused",
@@ -604,7 +635,7 @@ for (const failure of ["initial-timeout", "timeout", "wrong-pane", "paused-commi
             schema: 1, status: "requested", request_id: requestId,
             project_realpath: baseline.project_realpath, session_id: baseline.session_id,
             workspace_id: "w1", pane_id: "w1:p1", terminal_id: "term-ralph",
-            agent_target: "ralph", generation: 0,
+            agent_target: baseline.seats.ralph.agent_target, generation: 0,
             binding_generation: started.binding_generation,
             state_digest: baseline.state_digest, last_receipt_id: null,
             mode: "switch", file: realFile, content_sha256: contentSha,

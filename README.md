@@ -2,7 +2,7 @@
 
 Run Ralph (Claude) and Lisa (Codex) as two seats inside [Herdr](https://herdr.dev), with turn-based handoff (write → review → rework / pass) driven by the Ralph-Lisa Loop CLI.
 
-- Herdr plugin manifest: `integrations/herdr/herdr-plugin.toml` (plugin id `ralph-lisa.loop`, version 0.1.8, requires Herdr ≥ 0.9.4)
+- Herdr plugin manifest: `integrations/herdr/herdr-plugin.toml` (plugin id `ralph-lisa.loop`, version 0.1.9, requires Herdr ≥ 0.9.4)
 - Platforms: macOS
 - Status: **alpha** — live acceptance recorded against Herdr 0.9.4; see `docs/herdr/` for design, contracts and acceptance notes.
 
@@ -25,6 +25,10 @@ herdr-rll --full-auto "Create a responsive website and run its build"
 ```
 
 The terminal command and the Herdr **Start Ralph-Lisa task** overlay launch the same RLL workflow. Run a new task in an empty project directory. `--full-auto` selects the Agent permission profile; eligible candidates are committed automatically for that session, but their source is recorded as `unverified`. Claude may still ask you to trust a new directory. Use `herdr-rll status` to inspect an existing launch instead of starting it again.
+
+`0.3.14` is the current public npm release. This branch prepares CLI `0.3.15`; do not advertise or install `0.3.15` from npm until the maintainer has published it and the public-package acceptance check passes.
+
+One Herdr Server can host multiple projects concurrently. Each new RLL session gets its own Ralph and Lisa Agent targets, so keeping one project's Agent panes open no longer blocks another project from starting. A project still permits only one RLL session at a time; use `herdr-rll status` or the explicit recovery flow instead of starting the same project twice.
 
 ## Repository layout
 

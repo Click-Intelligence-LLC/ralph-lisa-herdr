@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { createLaunchIntent, recordLaunchWorkspace } from "../herdr/launch-record.js";
 import { inspectHerdrLaunch } from "../herdr/launch-status.js";
 import { initSessionIfAbsent } from "../herdr/session-init.js";
+import { targetsForSession } from "../herdr/seat-target.js";
 
 describe("read-only Herdr launch status", () => {
   it("reports evidence without inventing an active host", () => {
@@ -26,7 +27,8 @@ describe("read-only Herdr launch status", () => {
         { encoding: "utf8" });
       assert.equal(cli.status, 0, cli.stderr);
       assert.equal(JSON.parse(cli.stdout).status, "pending");
-      recordLaunchWorkspace(project, request, "w1", "w1:p1", "term-r");
+      recordLaunchWorkspace(project, request, "w1", "w1:p1", "term-r",
+        targetsForSession(session));
       fs.writeFileSync(path.join(project, ".dual-agent", "herdr-launch-result.json"),
         JSON.stringify({ schema: 1, request_id: request, status: "started" }));
       const stopped = inspectHerdrLaunch(project) as Record<string, unknown>;
