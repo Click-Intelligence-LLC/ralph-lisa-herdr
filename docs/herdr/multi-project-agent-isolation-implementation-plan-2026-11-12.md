@@ -607,23 +607,23 @@ docs(herdr): record concurrent project acceptance
 
 截至 2026-11-13，代码与发布前门禁状态如下：
 
-- CLI 构建、CLI 524/524、插件 66/66、96 个发布文件检查通过。
+- CLI 构建、CLI 526/526、插件 66/66、96 个发布文件检查通过。
 - CLI `0.3.15` 已要求插件至少为 `0.1.9`；旧插件不会接收新 target 启动契约。
 - 插件 action/pane 直接启动已按 session 派生 target，且混合新旧 target 失败关闭。
 - 同一 fake Herdr Server 的双项目测试已创建四个唯一 target，完成两项目各自双向交接并验证停止/错误重启隔离。
 - 同 Server 双项目真实验收和旧会话兼容回归通过。
-- 公司 GitHub 最终运行时提交 `c06090023cfd39e8b32147ecda7a6ac88da16618` 隔离安装成功，插件 `0.1.9` 的 doctor 为 `ready`。
-- CLI `0.3.15` 本地 tarball 已安装到全新 prefix，两个命令入口通过。
-- 分支头 `c060900` 的远端 Node 18/20/22 CI（运行 `43373839986`）已通过。
-- PR 审阅与合并、tag、公共 npm 发布和发布后公共来源冒烟仍是发布门禁，不得用本地 tarball 结果替代。
+- 公司 GitHub `main@4cce15e9acffbc8346c790e0a650885dbf8a10c6` 隔离安装成功，插件 `0.1.9` 的 doctor 为 `ready`。
+- CLI `0.3.15` 本地 tarball 已安装到全新 prefix，两个命令入口通过；SHA-256 为 `21e184e787a26440d2ec67e3e9a9ba6c88c55a3b5a010561648badc7a5882d19`。
+- 最终主分支远端 Node 18/20/22 CI（运行 `43391815373`）已通过。
+- 多项目功能 PR #3 和 Node 18 测试桩 hotfix PR #4 均已合并；发布准备 PR、tag、公共 npm 发布和发布后公共来源冒烟仍是发布门禁，不得用本地 tarball 结果替代。
 
 建议发布顺序：
 
-1. 合并功能分支。
-2. 创建插件 `v0.1.9` tag。
+1. 合并发布准备分支并等待主分支 CI。
+2. 让插件 `v0.1.9` 和 CLI `cli-v0.3.15` 标签指向同一个最终发布提交。
 3. 发布 npm `ralph-lisa-loop@0.3.15`。
 4. 从公共来源重新安装插件和 npm CLI。
-5. 运行一次发布后双项目冒烟测试。
+5. 运行发布后外部终端、Herdr Pane 不透明 Workspace ID 和双项目冒烟测试。
 6. 确认 Herdr 市场索引到新插件版本。
 
 ## 17. 回滚方案
