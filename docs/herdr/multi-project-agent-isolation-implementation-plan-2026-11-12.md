@@ -611,7 +611,8 @@ docs(herdr): record concurrent project acceptance
 - 同 Server 双项目真实验收和旧会话兼容回归通过。
 - 公司 GitHub 待发布运行时提交 `24c194f7bd6ec858b96cb7a7c6e591ce4657e97a` 隔离安装成功，插件 `0.1.9` 的 doctor 为 `ready`；后续只追加验收文档。
 - CLI `0.3.15` 本地 tarball 已安装到全新 prefix，两个命令入口通过。
-- 最终提交的远端 CI、PR 合并、tag、公共 npm 发布和发布后公共来源冒烟仍是发布门禁，不得用本地 tarball 结果替代。
+- 分支头 `faab748` 的远端 Node 18/20/22 CI（运行 `43354005553`）已通过。
+- PR 审阅与合并、tag、公共 npm 发布和发布后公共来源冒烟仍是发布门禁，不得用本地 tarball 结果替代。
 
 建议发布顺序：
 
