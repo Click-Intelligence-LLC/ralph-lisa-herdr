@@ -63,7 +63,7 @@ function preflight(): void {
   if (!Array.isArray(plugins)) throw new HerdrLaunchError("PLUGIN_LIST_INVALID");
   const plugin = plugins.find((item: any) => item.plugin_id === "ralph-lisa.loop" && item.enabled === true);
   if (!plugin) throw new HerdrLaunchError("HERDR_PLUGIN_REQUIRED");
-  if (typeof plugin.version !== "string" || !atLeastVersion(plugin.version, [0, 1, 3]))
+  if (typeof plugin.version !== "string" || !atLeastVersion(plugin.version, [0, 1, 9]))
     throw new HerdrLaunchError("HERDR_PLUGIN_VERSION_REQUIRED");
   if (!Array.isArray(plugin.panes) || !plugin.panes.some((pane: any) => pane.id === "coordinator"))
     throw new HerdrLaunchError("PLUGIN_LAUNCH_ENTRYPOINT_REQUIRED");

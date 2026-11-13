@@ -33,7 +33,7 @@ function fakeHerdr(root: string, project: string): string {
     `const state=path.join(project,'.dual-agent');` +
     `if(a[0]==='--version')console.log('herdr 0.9.4');` +
     `else if(a.join(' ')==='status server --json')console.log(JSON.stringify({status:'running',running:true}));` +
-    `else if(a.join(' ')==='plugin list --json')console.log(JSON.stringify({result:{plugins:[{plugin_id:'ralph-lisa.loop',version:'0.1.8',enabled:true,panes:[{id:'coordinator'}]}]}}));` +
+    `else if(a.join(' ')==='plugin list --json')console.log(JSON.stringify({result:{plugins:[{plugin_id:'ralph-lisa.loop',version:'0.1.9',enabled:true,panes:[{id:'coordinator'}]}]}}));` +
     `else if(a[0]==='workspace'&&a[1]==='get'&&a[2]==='w1')console.log(JSON.stringify({result:{workspace:{workspace_id:'w1'}}}));` +
     `else if(a[0]==='pane'&&a[1]==='get'&&a[2]==='w1:p1')console.log(JSON.stringify({result:{pane:{pane_id:'w1:p1',workspace_id:'w1',terminal_id:'term-r',cwd:project}}}));` +
     `else if(a[0]==='plugin'&&a[1]==='pane'&&a[2]==='open'){` +
