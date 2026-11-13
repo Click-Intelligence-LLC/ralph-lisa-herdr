@@ -22,7 +22,7 @@
 | 项目 A | `/private/tmp/rmp-R7vJWG/project-a` |
 | 项目 B | `/private/tmp/rmp-R7vJWG/project-b` |
 
-验收使用独立 `XDG_CONFIG_HOME`、`XDG_STATE_HOME`、`XDG_CACHE_HOME` 和命名 Server。插件从公司 GitHub 仓库固定提交安装；默认 Herdr Server、默认插件注册和 `super-rll` 均未参与。
+验收使用独立 `XDG_CONFIG_HOME`、`XDG_STATE_HOME`、`XDG_CACHE_HOME`、显式 `HERDR_CONFIG_PATH` 和命名 Server。插件从公司 GitHub 仓库固定提交安装；真实任务和 Agent 均未使用默认 Herdr Server，`super-rll` 未操作。清理阶段发生过一次默认插件注册误卸载，已按清理前记录的同一来源和固定提交原样恢复，详见第 9 节。
 
 ## 3. 席位与绑定证据
 
@@ -118,3 +118,16 @@ CLI 本地 tarball 的 SHA-256 为 `9a5e6ba404051048e0700a3ff9470e0a8d55e1531934
 ## 8. 发布判断
 
 代码、真实验收、版本号一致性、待发布运行时提交的 GitHub 固定提交安装和 CLI 本地 tarball 隔离 prefix 安装均已完成。本记录之后只允许追加验收文档；若再修改运行时代码或版本元数据，必须重新安装复验。发布前仍需最终分支头的 GitHub CI、PR 审阅和合并。发布动作本身仍需维护者创建 tag、发布 npm，并在发布后从公共来源重新执行冒烟测试。
+
+## 9. 清理与默认环境恢复
+
+两个命名测试 Server `rll-mp-r7vjwg`、`rmpf-kl32ns` 均已停止，未发现指向测试目录或命名 Server 的残留进程。临时目录 `/private/tmp/rmp-R7vJWG` 和 `/private/tmp/rmpf.Kl32ns` 已永久删除。
+
+预发布安装环境停机后执行 `plugin uninstall` 时，Herdr CLI 实际连接了默认注册表，短暂移除了默认 `ralph-lisa.loop`。发现后没有启动默认任务或升级默认版本，而是按清理前只读记录恢复：
+
+- 来源：`yueweilu/Ralph-Lisa-Loop/integrations/herdr`
+- requested/ref 与 resolved commit：`fa8e8bb0383ab990efbbabb442deea18d570bee2`
+- 插件版本：`0.1.8`
+- enabled：`true`
+
+恢复后 `herdr plugin list --json` 与上述来源、提交和版本一致。默认 Server 未因本次清理停止或重启。该事件也说明：仅设置 XDG 目录不足以保证停机后的插件管理命令仍连接预期注册表；隔离操作必须同时使用显式 `HERDR_CONFIG_PATH`、命名 Server，并在卸载前核对命令实际连接目标。
