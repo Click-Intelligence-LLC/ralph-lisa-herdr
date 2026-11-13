@@ -79,7 +79,7 @@ test("one Herdr server isolates two projects, four targets, and bidirectional ha
   fs.writeFileSync(fakeHerdr, `#!${process.execPath}\n` +
     `const fs=require('node:fs');const a=process.argv.slice(2);` +
     `const file=process.env.FAKE_HERDR_STATE;const read=()=>JSON.parse(fs.readFileSync(file));` +
-    `const save=(s)=>fs.writeFileSync(file,JSON.stringify(s));` +
+    `const save=(s)=>{const temp=file+'.'+process.pid+'.tmp';fs.writeFileSync(temp,JSON.stringify(s));fs.renameSync(temp,file);};` +
     `const out=(result)=>console.log(JSON.stringify({result}));` +
     `if(a[0]==='--version')console.log('herdr 0.9.4');` +
     `else if(a[0]==='integration')console.log('claude: current (v10)\\ncodex: current (v9)');` +
