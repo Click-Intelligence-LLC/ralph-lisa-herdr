@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { nativeSessionReference } from "./native-session.mjs";
 import { isRetryableHostResult, requireActiveSnapshot } from "./snapshot-diagnostic.mjs";
 import { agentCliGuidance, resolveCliArgv } from "./cli-command.mjs";
-import { legacyTargets, targetForRole, validSeatTargets } from "./seat-targets.mjs";
+import { legacyTargets, targetForRole, targetsForSession,
+  validSeatTargets } from "./seat-targets.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const stateRoot = process.env.HERDR_PLUGIN_STATE_DIR;
@@ -1218,7 +1219,7 @@ async function start() {
   let record;
   let plan = null;
   let bootNeeded = false;
-  const desiredTargets = launch?.workspace?.agent_targets ?? legacyTargets();
+  const desiredTargets = launch?.workspace?.agent_targets ?? targetsForSession(initial.session_id);
   if (!validSeatTargets(desiredTargets, true)) {
     stopLaunch("not_ready", "AGENT_TARGET_INVALID", 3);
     return;

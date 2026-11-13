@@ -180,30 +180,42 @@ test("seat preflight verifies real CLI state and two distinct Herdr agent identi
   assert.equal(init.status, 0, init.stderr);
   config({ project });
   const context = JSON.stringify({ workspace_id: "w1", workspace_cwd: project });
+  const snapshot = JSON.parse(spawnSync(process.execPath,
+    [cli, "host", "snapshot", "--project", project, "--json"], {
+      encoding: "utf8",
+    }).stdout);
+  const token = snapshot.session_id.replaceAll("-", "").slice(0, 16);
   const ready = run("seat-preflight", { context, integrations: "absent" });
   assert.equal(ready.code, 0);
   assert.equal(ready.value.status, "ready");
   assert.equal(ready.value.binding_plan.workspace_id, "w1");
   assert.equal(ready.value.binding_plan.seats.ralph.pane_id, "w1:p1");
   assert.equal(ready.value.binding_plan.seats.ralph.terminal_id, "term-r");
+  assert.equal(ready.value.binding_plan.seats.ralph.agent_target, `ralph_${token}`);
   assert.equal(ready.value.binding_plan.seats.lisa.agent_kind, "codex");
+  assert.equal(ready.value.binding_plan.seats.lisa.agent_target, `lisa_${token}`);
   assert.equal(ready.value.binding_plan.seats.lisa.native_session_fingerprint_sha256, null);
   const native = run("seat-preflight", { context, agentScenario: "native-session" });
   assert.match(native.value.binding_plan.seats.ralph.native_session_fingerprint_sha256,
     /^[0-9a-f]{64}$/);
   assert.doesNotMatch(JSON.stringify(native.value), /session-123/);
   assert.equal(ready.value.checks.integrations.codex, false);
-  assert.equal(ready.value.binding_plan.expected_digest,
-    JSON.parse(spawnSync(process.execPath, [cli, "host", "snapshot", "--project", project, "--json"], {
-      encoding: "utf8",
-    }).stdout).state_digest);
+  assert.equal(ready.value.binding_plan.expected_digest, snapshot.state_digest);
   const targets = { ralph: "ralph_6eac48cf75904052", lisa: "lisa_6eac48cf75904052" };
   const aliased = run("seat-preflight", { context, targets });
   assert.equal(aliased.code, 0);
   assert.equal(aliased.value.binding_plan.seats.ralph.agent_target, targets.ralph);
   assert.equal(aliased.value.binding_plan.seats.lisa.agent_target, targets.lisa);
+  const legacy = run("seat-preflight", { context,
+    targets: { ralph: "ralph", lisa: "lisa" } });
+  assert.equal(legacy.code, 0);
+  assert.equal(legacy.value.binding_plan.seats.ralph.agent_target, "ralph");
+  assert.equal(legacy.value.binding_plan.seats.lisa.agent_target, "lisa");
   assert.equal(run("seat-preflight", { context,
     targets: { ralph: "invalid", lisa: targets.lisa } }).value.code,
+  "AGENT_TARGET_INVALID");
+  assert.equal(run("seat-preflight", { context,
+    targets: { ralph: "ralph", lisa: targets.lisa } }).value.code,
   "AGENT_TARGET_INVALID");
   assert.equal(run("seat-preflight", { context, agentScenario: "wrong-kind" }).value.code,
     "AGENT_IDENTITY_MISMATCH");

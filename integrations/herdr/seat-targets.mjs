@@ -13,14 +13,14 @@ export function legacyTargets() {
 
 export function validSeatTargets(value, allowLegacy = false) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const valid = (role) => typeof value[role] === "string" &&
-    (AGENT_TARGET.test(value[role]) || allowLegacy && value[role] === role);
-  return valid("ralph") && valid("lisa") && value.ralph !== value.lisa;
+  const scoped = AGENT_TARGET.test(value.ralph) && AGENT_TARGET.test(value.lisa);
+  const legacy = allowLegacy && value.ralph === "ralph" && value.lisa === "lisa";
+  return scoped || legacy;
 }
 
-export function targetsFromEnvironment() {
+export function targetsFromEnvironment(sessionId = null) {
   const raw = process.env.RLL_AGENT_TARGETS_JSON;
-  if (!raw) return legacyTargets();
+  if (!raw) return sessionId ? targetsForSession(sessionId) : legacyTargets();
   let value;
   try { value = JSON.parse(raw); }
   catch { throw new Error("AGENT_TARGET_INVALID"); }
@@ -29,9 +29,8 @@ export function targetsFromEnvironment() {
 }
 
 export function targetForRole(plan, role) {
-  const target = plan?.seats?.[role]?.agent_target;
-  if (typeof target !== "string" || !target) throw new Error("AGENT_TARGET_INVALID");
-  return target;
+  if (!["ralph", "lisa"].includes(role)) throw new Error("AGENT_TARGET_INVALID");
+  return targetsFromPlan(plan)[role];
 }
 
 export function targetsFromPlan(plan) {
@@ -39,8 +38,7 @@ export function targetsFromPlan(plan) {
     ralph: plan?.seats?.ralph?.agent_target,
     lisa: plan?.seats?.lisa?.agent_target,
   };
-  const legacyCount = Number(targets.ralph === "ralph") + Number(targets.lisa === "lisa");
-  if (!validSeatTargets(targets, true) || legacyCount === 1)
+  if (!validSeatTargets(targets, true))
     throw new Error("AGENT_TARGET_INVALID");
   return targets;
 }

@@ -712,7 +712,7 @@ function seatPreflight(diagnosis, snapshot) {
   if (!workspaceId || (context?.workspace_id && context.workspace_id !== workspaceId))
     return { status: "not_ready", code: "WORKSPACE_REQUIRED" };
   let targets;
-  try { targets = targetsFromEnvironment(); }
+  try { targets = targetsFromEnvironment(snapshot.session_id); }
   catch { return { status: "not_ready", code: "AGENT_TARGET_INVALID" }; }
   const seats = {};
   for (const [role, kind] of [["ralph", "claude"], ["lisa", "codex"]]) {

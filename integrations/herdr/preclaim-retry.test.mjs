@@ -63,7 +63,7 @@ test("preclaim pane-busy retry reuses both seats and delivers the task once", as
     `const file=process.env.FAKE_HERDR_STATE;const s=JSON.parse(fs.readFileSync(file));` +
     `const save=()=>fs.writeFileSync(file,JSON.stringify(s));` +
     `const out=(result)=>console.log(JSON.stringify({result}));` +
-    `const pane=(id)=>({workspace_id:'w2',pane_id:id,terminal_id:id==='w2:p1'?'term-ralph':'term-lisa',cwd:process.env.FAKE_PROJECT,agent:id==='w2:p1'&&s.agents.ralph?'ralph':id==='w2:p2'&&s.agents.lisa?'lisa':null});` +
+    `const pane=(id)=>{const entry=Object.values(s.agents).find((agent)=>agent.pane_id===id);return {workspace_id:'w2',pane_id:id,terminal_id:id==='w2:p1'?'term-ralph':'term-lisa',cwd:process.env.FAKE_PROJECT,agent:entry?.name||null};};` +
     `if(a[0]==='--version')console.log('herdr 0.9.4');` +
     `else if(a[0]==='integration')console.log('claude: current (v10)\\ncodex: current (v9)');` +
     `else if(a[0]==='workspace'&&a[1]==='create'){s.workspaces++;save();out({workspace:{workspace_id:'w2'},root_pane:pane('w2:p1')});}` +
@@ -71,7 +71,7 @@ test("preclaim pane-busy retry reuses both seats and delivers the task once", as
     `else if(a[0]==='pane'&&a[1]==='split'){s.splits++;save();out({pane:pane('w2:p2')});}` +
     `else if(a[0]==='pane'&&a[1]==='get')out({pane:pane(a[2])});` +
     `else if(a[0]==='agent'&&a[1]==='get'){const agent=s.agents[a[2]];if(agent)out({agent});else{console.error(JSON.stringify({error:{code:'agent_not_found'}}));process.exitCode=1;}}` +
-    `else if(a[0]==='agent'&&a[1]==='start'){const role=a[2];if(role==='lisa'&&fs.existsSync(process.env.FAKE_LISA_BUSY)){console.error(JSON.stringify({error:{code:'agent_pane_busy'}}));process.exitCode=1;}else{const agent={name:role,agent:a[4],workspace_id:'w2',pane_id:a[6],terminal_id:role==='ralph'?'term-ralph':'term-lisa',cwd:process.env.FAKE_PROJECT,interactive_ready:true,agent_status:'idle'};s.agents[role]=agent;save();out({agent});}}` +
+    `else if(a[0]==='agent'&&a[1]==='start'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';if(role==='lisa'&&fs.existsSync(process.env.FAKE_LISA_BUSY)){console.error(JSON.stringify({error:{code:'agent_pane_busy'}}));process.exitCode=1;}else{const agent={name:target,agent:a[4],workspace_id:'w2',pane_id:a[6],terminal_id:role==='ralph'?'term-ralph':'term-lisa',cwd:process.env.FAKE_PROJECT,interactive_ready:true,agent_status:'idle'};s.agents[target]=agent;save();out({agent});}}` +
     `else if(a[0]==='agent'&&a[1]==='prompt'){s.prompts++;save();out({type:'agent_prompted',agent:s.agents[a[2]]});}` +
     `else process.exit(2);\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
@@ -81,6 +81,10 @@ test("preclaim pane-busy retry reuses both seats and delivers the task once", as
   try {
     const init = result(process.execPath, [cli, "init", "--minimal", project]);
     assert.equal(init.status, 0, init.stderr);
+    const initialized = JSON.parse(result(process.execPath,
+      [cli, "host", "snapshot", "--project", project, "--json"]).stdout);
+    const targetToken = initialized.session_id.replaceAll("-", "").slice(0, 16);
+    const expectedTargets = { ralph: `ralph_${targetToken}`, lisa: `lisa_${targetToken}` };
     const env = { ...process.env, HERDR_BIN_PATH: fakeHerdr,
       CLAUDE_BIN_PATH: fakeClaude, CODEX_BIN_PATH: fakeCodex,
       HERDR_PLUGIN_CONFIG_DIR: configDir, HERDR_PLUGIN_STATE_DIR: stateDir,
@@ -98,6 +102,7 @@ test("preclaim pane-busy retry reuses both seats and delivers the task once", as
     assert.equal(failed.lease_id, undefined);
     assert.equal(failed.ralph_terminal_id, "term-ralph");
     assert.equal(failed.lisa_terminal_id, "term-lisa");
+    assert.deepEqual(failed.agent_targets, expectedTargets);
     assert.deepEqual(fs.readdirSync(sessionDir), ["record.json"]);
     assert.equal(JSON.parse(fs.readFileSync(fakeState)).prompts, 0);
 
@@ -116,6 +121,7 @@ test("preclaim pane-busy retry reuses both seats and delivers the task once", as
     assert.equal(herdr.workspaces, 1);
     assert.equal(herdr.splits, 1);
     assert.equal(herdr.prompts, 1);
+    assert.deepEqual(Object.keys(herdr.agents).sort(), Object.values(expectedTargets).sort());
     const snapshot = result(process.execPath,
       [cli, "host", "snapshot", "--project", project, "--json"]);
     assert.equal(JSON.parse(snapshot.stdout).host_state, "claimed");

@@ -12,6 +12,9 @@ test("plugin target generation matches the CLI contract fixture", () => {
   assert.equal(validSeatTargets(targets), true);
   assert.equal(validSeatTargets(legacyTargets()), false);
   assert.equal(validSeatTargets(legacyTargets(), true), true);
+  assert.equal(validSeatTargets({
+    ralph: "ralph", lisa: "lisa_6eac48cf75904052",
+  }, true), false);
   assert.throws(() => targetsForSession("invalid"), /AGENT_TARGET_INVALID/);
 });
 
