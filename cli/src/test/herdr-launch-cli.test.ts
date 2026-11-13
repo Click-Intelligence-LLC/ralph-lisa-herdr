@@ -121,6 +121,84 @@ if (args.length === 1 && args[0] === "--version") {
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
+  it("reuses an opaque alphanumeric Workspace ID supplied by a Herdr pane", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rll-entry-opaque-workspace-"));
+    const project = path.join(root, "project");
+    fs.mkdirSync(project);
+    const fakeHerdr = path.join(root, "herdr-stub.js");
+    fs.writeFileSync(fakeHerdr, `#!${process.execPath}
+const fs = require("node:fs");
+const path = require("node:path");
+let args = process.argv.slice(2);
+if (args[0] === "--session") args = args.slice(2);
+const reply = (result) => console.log(JSON.stringify({ result }));
+const project = process.env.FAKE_PROJECT;
+if (args[0] === "--version") console.log("herdr 0.9.4");
+else if (args.join(" ") === "status server --json")
+  console.log(JSON.stringify({ status: "running", running: true }));
+else if (args.join(" ") === "plugin list --json")
+  reply({ plugins: [{ plugin_id: "ralph-lisa.loop", version: "0.1.9",
+    enabled: true, panes: [{ id: "coordinator" }] }] });
+else if (args.join(" ") === "workspace get wB")
+  reply({ workspace: { workspace_id: "wB" } });
+else if (args.join(" ") === "pane list --workspace wB")
+  reply({ panes: [{ pane_id: "wB:p1", workspace_id: "wB", cwd: project }] });
+else if (args[0] === "tab" && args[1] === "create")
+  reply({ type: "tab_created", root_pane: {
+    pane_id: "wB:p2", workspace_id: "wB", terminal_id: "term-r" } });
+else if (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {
+  const state = path.join(project, ".dual-agent");
+  const intent = JSON.parse(fs.readFileSync(path.join(state, "herdr-launch-intent.json")));
+  fs.writeFileSync(path.join(state, "herdr-launch-result.json"),
+    JSON.stringify({ schema: 1, request_id: intent.request_id, status: "started" }));
+  reply({ type: "plugin_pane_opened", plugin_pane: { pane: {
+    pane_id: "wB:p3", workspace_id: "wB" } } });
+} else process.exitCode = 2;
+`);
+    fs.chmodSync(fakeHerdr, 0o700);
+    try {
+      const result = spawnSync(process.execPath,
+        [cli, "auto", "--host", "herdr", "--project", project, "Task"],
+        { cwd: root, encoding: "utf8", timeout: 15000,
+          env: { ...process.env, HERDR_BIN_PATH: fakeHerdr, RLL_HERDR_SESSION: "rll-test",
+            HERDR_ENV: "1", HERDR_WORKSPACE_ID: "wB", FAKE_PROJECT: project } });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const receipt = JSON.parse(result.stdout);
+      assert.equal(receipt.status, "started");
+      assert.equal(receipt.workspace_id, "wB");
+      assert.equal(receipt.coordinator_pane_id, "wB:p3");
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it("rejects unsafe opaque Workspace IDs before initializing the project", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rll-entry-unsafe-workspace-"));
+    const project = path.join(root, "project");
+    fs.mkdirSync(project);
+    const fakeHerdr = path.join(root, "herdr-stub.js");
+    fs.writeFileSync(fakeHerdr, `#!${process.execPath}
+let args = process.argv.slice(2);
+if (args[0] === "--session") args = args.slice(2);
+if (args[0] === "--version") console.log("herdr 0.9.4");
+else if (args.join(" ") === "status server --json")
+  console.log(JSON.stringify({ status: "running", running: true }));
+else if (args.join(" ") === "plugin list --json")
+  console.log(JSON.stringify({ result: { plugins: [{ plugin_id: "ralph-lisa.loop",
+    version: "0.1.9", enabled: true, panes: [{ id: "coordinator" }] }] } }));
+else process.exitCode = 2;
+`);
+    fs.chmodSync(fakeHerdr, 0o700);
+    try {
+      const result = spawnSync(process.execPath,
+        [cli, "auto", "--host", "herdr", "--project", project, "Task"],
+        { cwd: root, encoding: "utf8", timeout: 15000,
+          env: { ...process.env, HERDR_BIN_PATH: fakeHerdr, RLL_HERDR_SESSION: "rll-test",
+            HERDR_ENV: "1", HERDR_WORKSPACE_ID: "wB\nunsafe" } });
+      assert.equal(result.status, 3, result.stdout + result.stderr);
+      assert.match(result.stderr, /WORKSPACE_ID_INVALID/);
+      assert.equal(fs.existsSync(path.join(project, ".dual-agent")), false);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
   it("rejects reuse of a Workspace for another project before initialization", () => {
     const root = fs.mkdtempSync("/tmp/rll-entry-");
     const project = path.join(root, "project");

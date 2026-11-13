@@ -69,11 +69,20 @@ function preflight(): void {
     throw new HerdrLaunchError("PLUGIN_LAUNCH_ENTRYPOINT_REQUIRED");
 }
 
+function validOpaqueId(value: string): boolean {
+  return value.length > 0 && value.length <= 512 && value.trim() === value &&
+    !/[\x00-\x1f\x7f]/.test(value);
+}
+
 function reusableWorkspace(project: string): string | null {
   const id = process.env.RLL_HERDR_REUSE_WORKSPACE_ID ||
     (process.env.HERDR_ENV === "1" ? process.env.HERDR_WORKSPACE_ID : undefined);
   if (!id) return null;
-  if (!/^w[1-9][0-9]*$/.test(id)) throw new HerdrLaunchError("WORKSPACE_ID_INVALID");
+  // Herdr documents public IDs as opaque stable handles. Do not assume that a
+  // Workspace ID uses a decimal suffix (real servers may return values such as
+  // `wB`); validate only the safe opaque-string boundary before passing it as
+  // an argv element and then verify it against the live server response.
+  if (!validOpaqueId(id)) throw new HerdrLaunchError("WORKSPACE_ID_INVALID");
   const observed = command(["workspace", "get", id]);
   if (observed.result?.workspace?.workspace_id !== id)
     throw new HerdrLaunchError("WORKSPACE_NOT_FOUND");
