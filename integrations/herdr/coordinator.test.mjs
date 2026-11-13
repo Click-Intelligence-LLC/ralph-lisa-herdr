@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { requireActiveSnapshot } from "./snapshot-diagnostic.mjs";
+import { isRetryableHostResult, requireActiveSnapshot } from "./snapshot-diagnostic.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.resolve(root, "../../cli/dist/cli.js");
@@ -72,6 +72,17 @@ test("active snapshot failure names mismatched fields and CLI status without val
     assert.doesNotMatch(JSON.stringify(error.snapshot_diagnostic), /secret/);
     return true;
   });
+});
+
+test("host busy and process timeout defer work without accepting an uncertain result", () => {
+  assert.equal(isRetryableHostResult({ code: 4,
+    value: { status: "error", code: "HOST_BUSY" }, error: null }), true);
+  assert.equal(isRetryableHostResult({ code: null,
+    value: { status: "ok" }, error: "ETIMEDOUT" }), true);
+  assert.equal(isRetryableHostResult({ code: null,
+    value: { status: "ok" }, error: "EPERM" }), false);
+  assert.equal(isRetryableHostResult({ code: 0,
+    value: { status: "ok" }, error: null }), false);
 });
 
 function waitForLine(child, predicate, timeoutMs = 15000) {

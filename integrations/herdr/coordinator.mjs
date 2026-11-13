@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { nativeSessionReference } from "./native-session.mjs";
-import { requireActiveSnapshot } from "./snapshot-diagnostic.mjs";
+import { isRetryableHostResult, requireActiveSnapshot } from "./snapshot-diagnostic.mjs";
 import { agentCliGuidance, resolveCliArgv } from "./cli-command.mjs";
 import { legacyTargets, targetForRole, validSeatTargets } from "./seat-targets.mjs";
 
@@ -206,10 +206,6 @@ function failRecord(paths, record, error, fallback) {
     ...(snapshotDiagnostic ? { snapshot_diagnostic: snapshotDiagnostic } : {}) }, 7);
 }
 
-function hostBusy(result) {
-  return result.value?.code === "HOST_BUSY";
-}
-
 function deliveryFile(paths, requestId) {
   if (!UUID.test(requestId)) throw new Error("INVALID_RECEIPT_ID");
   return path.join(paths.dir, `delivery-${requestId.toLowerCase()}.json`);
@@ -370,7 +366,7 @@ function deliverInitial(paths, record, cli, herdr, plan, taskFile) {
 
 function checkDelivery(paths, record, cli, herdr, plan) {
   const observed = call(cli, ["host", "snapshot", "--project", paths.real, "--json"]);
-  if (hostBusy(observed)) return record;
+  if (isRetryableHostResult(observed)) return record;
   const snapshot = requireActiveSnapshot(observed, paths, record, plan);
   if (snapshot.generation === record.cursor_generation) {
     if (snapshot.last_receipt_id !== record.cursor_receipt_id ||
@@ -382,7 +378,7 @@ function checkDelivery(paths, record, cli, herdr, plan) {
       !UUID.test(snapshot.last_receipt_id ?? "")) throw new Error("MISSED_RECEIPT");
   const result = call(cli, ["host", "receipt", "--project", paths.real,
     "--request-id", snapshot.last_receipt_id, "--json"]);
-  if (hostBusy(result)) return record;
+  if (isRetryableHostResult(result)) return record;
   const receipt = result.value;
   if (result.code === 0 && receipt?.status === "task_updated") {
     if (receipt.request_id !== snapshot.last_receipt_id ||
@@ -444,7 +440,7 @@ function checkDelivery(paths, record, cli, herdr, plan) {
       if (completion.code !== 0 || !completion.output.startsWith("Ready to proceed:"))
         throw new Error("COMPLETION_CHECK_UNCERTAIN");
       const confirmedRead = call(cli, ["host", "snapshot", "--project", paths.real, "--json"]);
-      if (hostBusy(confirmedRead)) return record;
+      if (isRetryableHostResult(confirmedRead)) return record;
       const confirmed = requireActiveSnapshot(confirmedRead, paths, record, plan);
       if (confirmed.generation !== snapshot.generation ||
           confirmed.last_receipt_id !== snapshot.last_receipt_id ||
@@ -508,7 +504,7 @@ function processTaskRequest(paths, record, cli, herdr, plan) {
     return record;
   }
   const observed = call(cli, ["host", "snapshot", "--project", paths.real, "--json"]);
-  if (hostBusy(observed)) return record;
+  if (isRetryableHostResult(observed)) return record;
   const snapshot = requireActiveSnapshot(observed, paths, record, plan);
   if (snapshot.generation !== record.cursor_generation ||
       snapshot.last_receipt_id !== record.cursor_receipt_id) return record;
@@ -531,7 +527,7 @@ function processTaskRequest(paths, record, cli, herdr, plan) {
     "--expected-digest", request.state_digest, "--mode", request.mode,
     "--file", request.file, "--content-sha256", request.content_sha256, "--json"];
   const checked = call(cli, ["host", "task-update-check", ...args]);
-  if (hostBusy(checked)) return record;
+  if (isRetryableHostResult(checked)) return record;
   if (checked.code !== 0 || checked.value?.status !== "ready" ||
       checked.value.request_id !== request.request_id ||
       checked.value.generation_before !== request.generation ||
@@ -541,7 +537,7 @@ function processTaskRequest(paths, record, cli, herdr, plan) {
       checked.value.mode !== request.mode)
     throw new Error(checked.value?.code || "TASK_UPDATE_CHECK_FAILED");
   const changed = call(cli, ["host", "task-update", ...args]);
-  if (hostBusy(changed)) return record;
+  if (isRetryableHostResult(changed)) return record;
   if (changed.code !== 0 || changed.value?.status !== "task_updated" ||
       changed.value.request_id !== request.request_id ||
       changed.value.generation_before !== request.generation) {
@@ -658,12 +654,12 @@ function autoCommitRequestId(sessionId, generation, candidateId) {
 
 function checkAutoCandidate(paths, record, cli, herdr, plan) {
   const observed = call(cli, ["host", "snapshot", "--project", paths.real, "--json"]);
-  if (hostBusy(observed)) return record;
+  if (isRetryableHostResult(observed)) return record;
   const snapshot = requireActiveSnapshot(observed, paths, record, plan);
   if (snapshot.generation !== record.cursor_generation ||
       snapshot.last_receipt_id !== record.cursor_receipt_id) return record;
   const listed = call(cli, ["host", "candidates", "--project", paths.real, "--json"]);
-  if (hostBusy(listed)) return record;
+  if (isRetryableHostResult(listed)) return record;
   if (listed.code !== 0 || listed.value?.status !== "ok" ||
       listed.value.session_id !== record.session_id ||
       !Array.isArray(listed.value.candidates))
@@ -703,7 +699,7 @@ function checkAutoCandidate(paths, record, cli, herdr, plan) {
     "--expected-generation", String(snapshot.generation),
     "--expected-binding-generation", String(record.binding_generation), "--json"];
   const checked = call(cli, ["host", "commit-check", ...args]);
-  if (hostBusy(checked)) return record;
+  if (isRetryableHostResult(checked)) return record;
   if (checked.code !== 0 || checked.value?.status !== "auto_source_authorized" ||
       checked.value.candidate_id !== candidate.candidate_id ||
       checked.value.content_sha256 !== candidate.content_sha256 ||
@@ -719,7 +715,8 @@ function checkAutoCandidate(paths, record, cli, herdr, plan) {
     durableWrite(paths.record, record);
   }
   const committed = call(cli, ["host", "commit", ...args], { timeoutMs: 120000 });
-  if (hostBusy(committed) || committed.code !== 0 || committed.value?.status !== "committed") {
+  if (isRetryableHostResult(committed) || committed.code !== 0 ||
+      committed.value?.status !== "committed") {
     const lookup = call(cli, ["host", "receipt", "--project", paths.real,
       "--request-id", requestId, "--json"]);
     if (lookup.code !== 0 || lookup.value?.status !== "committed")
@@ -763,7 +760,7 @@ async function runActiveLoop(paths, initialRecord, cli, herdr, signalState = nul
       if (request.owner_id !== ownerId || request.lease_id !== leaseId)
         throw new Error("STOP_REQUEST_MISMATCH");
       const stoppedRead = call(cli, ["host", "snapshot", "--project", paths.real, "--json"]);
-      if (hostBusy(stoppedRead)) {
+      if (isRetryableHostResult(stoppedRead)) {
         if (signalStop && ++signalBusyChecks >= 5)
           throw new Error("SIGNAL_SHUTDOWN_HOST_BUSY");
         continue;
@@ -806,7 +803,7 @@ async function runActiveLoop(paths, initialRecord, cli, herdr, signalState = nul
       }
       const heartbeat = call(cli, ["host", "heartbeat", "--project", paths.real,
         "--lease-id", leaseId, "--owner-id", ownerId, "--json"]);
-      if (hostBusy(heartbeat)) continue;
+      if (isRetryableHostResult(heartbeat)) continue;
       if (heartbeat.code !== 0 || heartbeat.value?.lease_id !== leaseId)
         throw new Error(heartbeat.value?.code || "HEARTBEAT_UNCERTAIN");
     }
@@ -825,7 +822,7 @@ function processControl(paths, record, cli, herdr, plan) {
     return record;
   }
   const observed = call(cli, ["host", "snapshot", "--project", paths.real, "--json"]);
-  if (hostBusy(observed)) return record;
+  if (isRetryableHostResult(observed)) return record;
   const snapshot = requireActiveSnapshot(observed, paths, record, plan);
   if (request.action === "pause") {
     if (record.phase !== "active") throw new Error("PAUSE_STATE_CHANGED");

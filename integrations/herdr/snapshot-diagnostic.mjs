@@ -1,6 +1,10 @@
 const STATUS = /^[a-z][a-z0-9_]{0,31}$/;
 const CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
 
+export function isRetryableHostResult(result) {
+  return result?.value?.code === "HOST_BUSY" || result?.error === "ETIMEDOUT";
+}
+
 function safeToken(value, pattern) {
   if (value == null) return null;
   return typeof value === "string" && pattern.test(value) ? value : "unrecognized";
