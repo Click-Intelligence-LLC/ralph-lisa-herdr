@@ -90,6 +90,10 @@
 | npm 内容检查 | 96 个发布文件通过 |
 | GitHub CI | `1f13228` 的 Node 18/20/22 全部通过 |
 | 真实 Herdr | 同 Server 四 target、双项目双向交接、单项目恢复隔离通过 |
+| 待发布运行时提交安装 | `24c194f7bd6ec858b96cb7a7c6e591ce4657e97a` 安装成功；插件 `0.1.9`；doctor `ready`；同仓 CLI `0.3.15` |
+| CLI 本地 tarball 隔离安装 | `ralph-lisa-loop-0.3.15.tgz` 安装到全新 prefix；`ralph-lisa --version` 与 `herdr-rll --help` 通过 |
+
+CLI 本地 tarball 的 SHA-256 为 `9a5e6ba404051048e0700a3ff9470e0a8d55e1531934f756833b37173b36c278`，npm integrity 为 `sha512-BoupYy/P2XOW3ZRC6mWGF2UUUkWzb4A6CDA6GNWUEXEsCRP7enN3VC720Kba1SEAyIGEktrdJJkm0PTbcqqVBg==`。该 tarball 是发布前本地构建物，不是 npm 公共仓库回包。
 
 ## 7. 已通过与未证明
 
@@ -113,4 +117,4 @@
 
 ## 8. 发布判断
 
-代码和真实验收已满足进入发布准备的条件。发布前还需完成版本号一致性、最终提交的 GitHub 固定提交安装、CLI 本地 tarball 隔离 prefix 安装、PR 审阅和合并。发布动作本身仍需维护者创建 tag、发布 npm，并在发布后从公共来源重新执行冒烟测试。
+代码、真实验收、版本号一致性、待发布运行时提交的 GitHub 固定提交安装和 CLI 本地 tarball 隔离 prefix 安装均已完成。本记录之后只允许追加验收文档；若再修改运行时代码或版本元数据，必须重新安装复验。发布前仍需最终分支头的 GitHub CI、PR 审阅和合并。发布动作本身仍需维护者创建 tag、发布 npm，并在发布后从公共来源重新执行冒烟测试。

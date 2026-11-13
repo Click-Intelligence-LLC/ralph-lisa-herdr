@@ -605,6 +605,14 @@ docs(herdr): record concurrent project acceptance
 - npm 隔离 prefix 安装测试通过。
 - 插件版本、npm 版本、tag 和 README 一致。
 
+截至 2026-11-13，代码与发布前门禁状态如下：
+
+- CLI 构建、CLI 524/524、插件 65/65、96 个发布文件检查通过。
+- 同 Server 双项目真实验收和旧会话兼容回归通过。
+- 公司 GitHub 待发布运行时提交 `24c194f7bd6ec858b96cb7a7c6e591ce4657e97a` 隔离安装成功，插件 `0.1.9` 的 doctor 为 `ready`；后续只追加验收文档。
+- CLI `0.3.15` 本地 tarball 已安装到全新 prefix，两个命令入口通过。
+- 最终提交的远端 CI、PR 合并、tag、公共 npm 发布和发布后公共来源冒烟仍是发布门禁，不得用本地 tarball 结果替代。
+
 建议发布顺序：
 
 1. 合并功能分支。
