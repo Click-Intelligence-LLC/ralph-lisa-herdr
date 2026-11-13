@@ -6,6 +6,8 @@
 
 多项目隔离目标通过。本次验收同时发现并修复了两个只在真实恢复链路出现的问题：重绑预检错误回退到旧固定 Agent 名，以及 Host 快照子进程已经输出 JSON 但超时未退出时被误判为活动快照不一致。修复后，项目 A 在不影响项目 B 的情况下完成显式租约回收、重绑、非零游标接续和有界运行观察。
 
+同日后续手工复验在另一个命名 Server 中同时启动项目 A、B。四个唯一 Agent target 保持隔离，两个项目均自动推进到 generation 8、达成共识、返回 `completed` 并释放各自租约。该复验发现从现有 Herdr Pane 启动时，当前 Server 可能返回 `wB` 这类非十进制 Workspace ID；CLI 原先错误地只接受 `w[1-9][0-9]*`。提交 `687c42b` 按 Herdr 的“不透明稳定句柄”契约修复校验，并保留长度、首尾空白、控制字符和真实 Server 回读门禁。
+
 这不是干净虚拟机或发布后公共版本验收，也不证明长期无人值守稳定性。项目 A 的旧租约候选在暂停后才落盘，恢复时被安全保留为过期候选，没有自动提交；因此本记录不把项目 A 的业务任务本身标为完成。
 
 ## 2. 验收范围与隔离边界
@@ -94,16 +96,37 @@
 
 安全直接重启 A 会返回 `EXISTING_GENERATION_REQUIRES_RECOVERY`，必须走既有显式恢复链；成功的租约回收、重绑和非零游标接续由本记录第 5.4 节的真实验收及既有重启自动化覆盖。
 
+### 5.6 手工双项目完成复验与不透明 Workspace ID
+
+后续手工复验使用隔离根目录 `/private/tmp/hman.hvwCuz`、命名 Server `hman-hvwcuz`，项目为 `project-a` 和 `project-b`。由于本轮访问 GitHub 下载超时，插件从最终分支 checkout 本地链接，不把这次复验记为新的公共来源安装验收。
+
+实际结果：
+
+- 项目 A 使用 `ralph_9b48eb1c611949fd`、`lisa_9b48eb1c611949fd`，最终 generation 8、`completed`、Host `unclaimed`；
+- 项目 B 使用 `ralph_27cb68e091e44189`、`lisa_27cb68e091e44189`，最终 generation 8、`completed`、Host `unclaimed`；
+- 两个项目交错推进时，候选、回执、轮次和提示均留在各自 Workspace；A 先完成并释放后，B 继续运行至完成；
+- A 的 README 为一行目标文本并带常规行末换行，B 的 README 为精确 28 字节目标文本且无尾随换行；两席分别完成内容核验和最终共识；
+- 测试 Server 正常停止，默认 Herdr Server 未操作，测试根目录暂留用于追溯。
+
+从当前 Herdr Pane 启动第一次复验时，CLI 继承 `HERDR_WORKSPACE_ID=wB`，旧正则将其误判为 `WORKSPACE_ID_INVALID`。Herdr 本地 skill 明确规定公共 Workspace/Tab/Pane ID 是 opaque stable handle，因此不能推测其数字编码。修复后的 CLI：
+
+1. 接受 `wB` 等安全的不透明 ID；
+2. 继续拒绝空值、超过 512 字节、首尾空白或含控制字符的 ID；
+3. 仍通过 `workspace get <id>` 和项目 Pane 列表核对 ID 与项目归属；
+4. 以独立 argv 元素传给 Herdr，不经过 shell 拼接。
+
+定向回归覆盖 `HERDR_ENV=1`、`HERDR_WORKSPACE_ID=wB` 的成功复用，以及含换行 ID 在项目初始化前被拒绝。修复提交为 `687c42b`。
+
 ## 6. 自动化验证
 
 | 验证层 | 结果 |
 |---|---|
-| CLI 聚焦测试 | 失败启动安全接续 11/11 通过 |
-| CLI 全量测试 | 524/524 通过 |
+| CLI 聚焦测试 | 不透明 Workspace ID 启动回归 7/7 通过；失败启动安全接续既有回归继续通过 |
+| CLI 全量测试 | 526/526 通过 |
 | 插件全量测试 | 最终 66/66 通过 |
 | npm 内容检查 | 96 个发布文件通过 |
-| GitHub CI | 最终运行时提交 `c060900` 的 Node 18/20/22 全部通过；运行 `43373839986` |
-| 真实 Herdr | 同 Server 四 target、双项目双向交接、单项目恢复隔离通过 |
+| GitHub CI | 最终运行时提交 `c060900` 与 Workspace ID 修复提交 `687c42b` 的 Node 18/20/22 全部通过；修复运行 `43386559731` |
+| 真实 Herdr | 同 Server 四 target、双项目双向交接、单项目恢复隔离通过；后续手工复验两个项目均自动完成并释放 |
 | 待发布运行时提交安装 | `c06090023cfd39e8b32147ecda7a6ac88da16618` 从公司 GitHub 仓库固定提交安装成功；插件 `0.1.9`；doctor `ready`；同仓 CLI `0.3.15` |
 | CLI 本地 tarball 隔离安装 | `ralph-lisa-loop-0.3.15.tgz` 安装到全新 prefix；`ralph-lisa --version` 与 `herdr-rll --help` 通过 |
 

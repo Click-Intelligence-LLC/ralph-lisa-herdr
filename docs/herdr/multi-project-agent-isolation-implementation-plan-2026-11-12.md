@@ -23,7 +23,7 @@
 | 1. 会话级 Agent target | 已完成 | CLI 生成并持久化会话级 target；插件启动、预检、提示投递、自动交接和预认领恢复按绑定 target 定位 Agent；旧启动记录继续兼容固定 target | CLI 522/522；插件 61/61；发布包 96 个文件校验通过；远端 Node 18/20/22 CI 通过 |
 | 2. 候选、任务更新与恢复 | 已完成 | 候选适配器按 Pane 从 Host Binding 解析业务角色并核对 target；聊天任务更新保存绑定 target；恢复和接续观察按持久化 target 查询；兼容旧固定 target | 插件定向测试 13/13；插件全量测试 63/63；远端 Node 18/20/22 CI 通过 |
 | 3. 失败启动安全接续 | 已完成 | 同任务、同模式、同 session、同 Workspace/根 Pane/target 且 Host 未认领、零游标、无候选时复用原请求；协调器继续核验旧进程和完整席位；其余现场返回 `RECOVERY_REQUIRED` | CLI 定向测试 11/11；CLI 全量测试 524/524；发布包 96 个文件校验通过；远端 Node 18/20/22 CI 通过 |
-| 4. 真实验收与发布文档 | 已完成，待发布 | 同 Server 四个唯一 target；两个项目分别完成双向交接；项目 A 恢复时 B 不变化；真实恢复发现的动态 target 和 Host 超时问题已修复；验收记录、README 和版本已同步 | 插件全量 65/65；`1f13228` 远端 Node 18/20/22 CI 通过；详见 `multi-project-agent-isolation-acceptance-2026-11-13.md` |
+| 4. 真实验收与发布文档 | 已完成，待发布 | 同 Server 四个唯一 target；两个项目分别完成双向交接并在后续手工复验中都自动完成；项目 A 恢复时 B 不变化；动态 target、Host 超时和不透明 Workspace ID 兼容问题均已修复；验收记录、README 和版本已同步 | CLI 526/526、插件 66/66；Workspace ID 修复提交 `687c42b` 的远端 Node 18/20/22 CI 通过；详见 `multi-project-agent-isolation-acceptance-2026-11-13.md` |
 
 ## 2. 问题与已确认原因
 
