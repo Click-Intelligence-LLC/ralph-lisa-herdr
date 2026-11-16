@@ -20,17 +20,24 @@ ralph-lisa start "implement login feature"
 
 ## Herdr entry point (macOS)
 
-Install Herdr 0.9.4 or later and the [Ralph-Lisa Herdr plugin](https://github.com/Click-Intelligence-LLC/ralph-lisa-herdr), then install this CLI package:
+Install Herdr 0.9.4 or later, then install this CLI package and let it set up
+the matching public plugin:
 
 ```bash
-herdr plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr
-npm install -g ralph-lisa-loop@0.3.14
+npm install -g ralph-lisa-loop@0.3.16
+herdr-rll setup
 mkdir my-project && cd my-project
 herdr-rll --full-auto "Create a responsive website and run its build"
 herdr-rll status
 ```
 
-You can also start from the plugin's task input page in Herdr. Installing the plugin does not register the global `herdr-rll` command. Each new task needs an empty project; use `herdr-rll status` to inspect an existing session. `--full-auto` configures Agent permissions, while eligible candidates are automatically committed for that session with `source_verification=unverified`. Claude can still request directory trust.
+`herdr-rll setup` installs the official `ralph-lisa.loop` plugin at tag
+`v0.1.9`, enables it, and runs its doctor. It does not silently replace a
+locally linked plugin. You can also start from the plugin's task input page in
+Herdr. Each new task needs an empty project; use `herdr-rll status` to inspect
+an existing session. `--full-auto` configures Agent permissions, while eligible
+candidates are automatically committed for that session with
+`source_verification=unverified`. Claude can still request directory trust.
 
 ## How It Works
 
