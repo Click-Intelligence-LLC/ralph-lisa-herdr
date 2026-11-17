@@ -12,6 +12,7 @@ import { legacyTargets, targetForRole, targetsForSession,
 const root = path.dirname(fileURLToPath(import.meta.url));
 const stateRoot = process.env.HERDR_PLUGIN_STATE_DIR;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DIAGNOSTIC_TOKEN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 function emit(value, code = 0) {
   process.stdout.write(`${JSON.stringify({ schema: 1, ...value })}\n`);
@@ -201,10 +202,32 @@ function priorPluginDigest(paths, names) {
 function failRecord(paths, record, error, fallback) {
   const code = error.message || fallback;
   const snapshotDiagnostic = error.snapshot_diagnostic;
+  const deliveryDiagnostic = error.delivery_diagnostic;
   durableWrite(paths.record, { ...record, phase: "needs_reconcile", error: code,
-    ...(snapshotDiagnostic ? { snapshot_diagnostic: snapshotDiagnostic } : {}) });
+    ...(snapshotDiagnostic ? { snapshot_diagnostic: snapshotDiagnostic } : {}),
+    ...(deliveryDiagnostic ? { delivery_diagnostic: deliveryDiagnostic } : {}) });
   emit({ status: "needs_reconcile", code, project: paths.real,
-    ...(snapshotDiagnostic ? { snapshot_diagnostic: snapshotDiagnostic } : {}) }, 7);
+    ...(snapshotDiagnostic ? { snapshot_diagnostic: snapshotDiagnostic } : {}),
+    ...(deliveryDiagnostic ? { delivery_diagnostic: deliveryDiagnostic } : {}) }, 7);
+}
+
+function safeDiagnosticToken(value) {
+  if (value == null) return null;
+  return typeof value === "string" && DIAGNOSTIC_TOKEN.test(value)
+    ? value : "unrecognized";
+}
+
+function promptDeliveryFailure(role, stage, result = {}, extra = {}) {
+  const error = new Error("PROMPT_DELIVERY_UNCONFIRMED");
+  error.delivery_diagnostic = {
+    role,
+    stage,
+    cli_exit_status: Number.isInteger(result.code) ? result.code : null,
+    herdr_result_code: safeDiagnosticToken(result.value?.error?.code),
+    cli_spawn_error: safeDiagnosticToken(result.error),
+    ...extra,
+  };
+  return error;
 }
 
 function deliveryFile(paths, requestId) {
@@ -301,21 +324,36 @@ function submitPrompt(paths, record, herdr, plan, role, message, file, details) 
     "--wait", "--until", "working", "--until", "blocked", "--timeout", "7000"],
     { timeoutMs: 9000 });
   if (submitted.code !== 0 || submitted.value?.error)
-    throw new Error(submitted.value?.error?.code || submitted.error || "PROMPT_UNCERTAIN");
+    throw promptDeliveryFailure(role, "prompt_wait", submitted);
   const acknowledged = submitted.value?.result;
   let acknowledgedCwd = null;
   try { acknowledgedCwd = fs.realpathSync.native(acknowledged.agent.cwd); }
   catch { /* A missing or changed project is not an acknowledged seat. */ }
-  if (acknowledged?.type !== "agent_prompted" ||
-      acknowledged.agent?.name !== target ||
-      acknowledged.agent?.agent !== (role === "ralph" ? "claude" : "codex") ||
-      acknowledged.agent?.workspace_id !== plan.workspace_id ||
-      acknowledged.agent?.pane_id !== plan.seats[role].pane_id ||
-      !["working", "blocked"].includes(acknowledged.agent?.agent_status) ||
-      acknowledgedCwd !== paths.real)
-    throw new Error("PROMPT_ACK_MISMATCH");
-  const nativeSession = observeSeat(herdr, plan, role,
-    role === "ralph" ? "claude" : "codex", false);
+  const acknowledgedChecks = [
+    ["result.type", acknowledged?.type === "agent_prompted"],
+    ["agent.name", acknowledged?.agent?.name === target],
+    ["agent.kind", acknowledged?.agent?.agent === (role === "ralph" ? "claude" : "codex")],
+    ["agent.workspace_id", acknowledged?.agent?.workspace_id === plan.workspace_id],
+    ["agent.pane_id", acknowledged?.agent?.pane_id === plan.seats[role].pane_id],
+    ["agent.agent_status", ["working", "blocked"].includes(acknowledged?.agent?.agent_status)],
+    ["agent.cwd", acknowledgedCwd === paths.real],
+  ];
+  const unmatchedFields = acknowledgedChecks.filter(([, matches]) => !matches)
+    .map(([field]) => field);
+  if (unmatchedFields.length)
+    throw promptDeliveryFailure(role, "prompt_ack", submitted, {
+      observed_agent_status: safeDiagnosticToken(acknowledged?.agent?.agent_status),
+      unmatched_fields: unmatchedFields,
+    });
+  let nativeSession;
+  try {
+    nativeSession = observeSeat(herdr, plan, role,
+      role === "ralph" ? "claude" : "codex", false);
+  } catch (cause) {
+    throw promptDeliveryFailure(role, "post_submit_seat_check", submitted, {
+      post_submit_error: safeDiagnosticToken(cause.message),
+    });
+  }
   if (!plan.seats[role].native_session_fingerprint_sha256 &&
       nativeSession.status === "present")
     plan.seats[role].native_session_fingerprint_sha256 = nativeSession.fingerprint_sha256;

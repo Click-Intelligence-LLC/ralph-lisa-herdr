@@ -505,11 +505,19 @@ for (const failure of ["initial-timeout", "initial-stalled", "timeout", "wrong-p
       value.status === "started" || value.status === "needs_reconcile");
     if (["initial-timeout", "initial-stalled"].includes(failure)) {
       assert.equal(started.status, "needs_reconcile");
-      assert.equal(started.code,
-        failure === "initial-stalled" ? "agent_prompt_stalled" : "timeout");
+      assert.equal(started.code, "PROMPT_DELIVERY_UNCONFIRMED");
+      assert.deepEqual(started.delivery_diagnostic, {
+        role: "ralph", stage: "prompt_wait", cli_exit_status: 1,
+        herdr_result_code: failure === "initial-stalled" ? "agent_prompt_stalled" : "timeout",
+        cli_spawn_error: null,
+      });
+      assert.doesNotMatch(JSON.stringify(started.delivery_diagnostic),
+        new RegExp(project.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
       const sessionDir = path.join(stateDir, "sessions",
         fs.readdirSync(path.join(stateDir, "sessions"))[0]);
       const record = JSON.parse(fs.readFileSync(path.join(sessionDir, "record.json"), "utf8"));
+      assert.equal(record.error, "PROMPT_DELIVERY_UNCONFIRMED");
+      assert.deepEqual(record.delivery_diagnostic, started.delivery_diagnostic);
       const initial = JSON.parse(fs.readFileSync(path.join(sessionDir,
         `initial-${record.session_id}.json`), "utf8"));
       assert.equal(initial.status, "intent");
@@ -973,7 +981,11 @@ for (const failure of ["initial-timeout", "initial-stalled", "timeout", "wrong-p
           const delivery = await handedOff;
           if (failure === "server-restart-continue-uncertain") {
             assert.equal(delivery.status, "needs_reconcile", JSON.stringify(delivery));
-            assert.equal(delivery.code, "timeout");
+            assert.equal(delivery.code, "PROMPT_DELIVERY_UNCONFIRMED");
+            assert.equal(delivery.delivery_diagnostic.role,
+              nonzero && !taskUpdate ? "ralph" : "lisa");
+            assert.equal(delivery.delivery_diagnostic.stage, "prompt_wait");
+            assert.equal(delivery.delivery_diagnostic.herdr_result_code, "timeout");
             assert.equal(fs.readFileSync(prompts, "utf8"), "ralph\nlisa\n");
             const uncertainAudit = spawnSync(process.execPath,
               [path.join(root, "actions.mjs"), "recovery-check"],
@@ -1168,7 +1180,17 @@ for (const failure of ["initial-timeout", "initial-stalled", "timeout", "wrong-p
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     assert.equal(record.phase, "needs_reconcile");
-    assert.equal(record.error, failure === "timeout" ? "timeout" : "PROMPT_ACK_MISMATCH");
+    assert.equal(record.error, "PROMPT_DELIVERY_UNCONFIRMED");
+    assert.equal(record.delivery_diagnostic.role, "lisa");
+    if (failure === "timeout") {
+      assert.equal(record.delivery_diagnostic.stage, "prompt_wait");
+      assert.equal(record.delivery_diagnostic.herdr_result_code, "timeout");
+    } else {
+      assert.equal(record.delivery_diagnostic.stage, "prompt_ack");
+      assert.deepEqual(record.delivery_diagnostic.unmatched_fields, ["agent.pane_id"]);
+    }
+    assert.doesNotMatch(JSON.stringify(record.delivery_diagnostic),
+      new RegExp(project.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     const delivery = JSON.parse(fs.readFileSync(path.join(sessionDir,
       `delivery-${requestId}.json`), "utf8"));
     assert.equal(delivery.status, "intent");
