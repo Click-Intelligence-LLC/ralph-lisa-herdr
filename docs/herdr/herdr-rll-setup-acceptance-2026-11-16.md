@@ -70,13 +70,36 @@ simulation with those inherited Pane variables removed used one consistent
 isolated registry and passed. Normal terminal users do not have this mixed test
 environment.
 
+## Packed CLI installation
+
+Before merge, the CLI package was packed from commit `8b12a4c` and installed
+into a new isolated npm prefix rather than invoked from the source tree.
+
+- Package: `ralph-lisa-loop-0.3.16.tgz`
+- SHA-256: `2f4e70bedea1e7f53536d22cd9d26d4ff49c5bf22a386bda6be77c018f633547`
+- Release files: 98
+- `ralph-lisa --version`: `ralph-lisa-loop v0.3.16`
+- `herdr-rll --help`: included `herdr-rll setup`
+- Initial isolated Herdr plugin list: empty
+
+The packed global `herdr-rll setup` command then installed plugin `0.1.9` from
+tag `v0.1.9`, resolved commit `a32005abfb9be1ff2f4bd2512c1e225895ca8e63`,
+and returned `status=ready` with both Agent integrations and logins ready.
+
+The same packed command was run a second time. It returned `status=ready`
+again, while `installed_unix_ms`, `managed_path`, plugin root, requested ref and
+resolved commit remained unchanged. This confirms the normal repeated setup
+path is idempotent and does not reinstall an already matching plugin.
+
 ## Acceptance boundary
 
 Validated:
 
 - local CLI 0.3.16 build;
+- packed CLI 0.3.16 installation in an isolated npm prefix;
 - fixed public GitHub plugin installation;
 - source/ref/readback verification;
+- repeated setup without plugin reinstallation;
 - real plugin doctor readiness;
 - regression and package contents.
 
