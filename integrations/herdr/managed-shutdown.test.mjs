@@ -104,7 +104,7 @@ for (const scenario of ["normal", "hangup", "changed", "before_prompt", "authori
     `if(a[0]==='--version')console.log('herdr 0.9.4');` +
     `else if(a[0]==='integration')console.log('claude: installed\\ncodex: installed');` +
     `else if(a[0]==='agent'&&a[1]==='get')console.log(JSON.stringify({result:{agent:agent(target)}}));` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,'1');console.log(JSON.stringify({result:{type:'agent_prompted',agent:agent(target)}}));}` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,'1');console.log(JSON.stringify({result:{type:'agent_prompted',agent:{...agent(target),agent_status:'working'}}}));}` +
     `else process.exitCode=2;\n`);
   fs.writeFileSync(fakeCli, `#!${process.execPath}\n` +
     `const {spawnSync}=require('node:child_process');const a=process.argv.slice(2);` +
@@ -420,7 +420,7 @@ test("managed preclaim close retains an auditable result and resumes the same re
     `else if(a[0]==='agent'&&a[1]==='start'){fs.appendFileSync(process.env.FAKE_START_ARGS,JSON.stringify(a)+'\\n');fs.writeFileSync(role(a[2])==='ralph'?started:lisa,'1');out({agent:agent(a[2])});}` +
     `else if(a[0]==='agent'&&a[1]==='get'){if(present(a[2]))out({agent:agent(a[2])});` +
     `else{console.error(JSON.stringify({error:{code:'agent_not_found'}}));process.exitCode=1;}}` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){fs.appendFileSync(process.env.FAKE_PROMPT_FILE,'1');out({type:'agent_prompted',agent:agent(a[2])});}` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){fs.appendFileSync(process.env.FAKE_PROMPT_FILE,'1');out({type:'agent_prompted',agent:{...agent(a[2]),agent_status:'working'}});}` +
     `else process.exitCode=2;\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
   fs.writeFileSync(fakeCodex, `#!${process.execPath}\nconsole.log('Logged in using ChatGPT');\n`);

@@ -72,7 +72,7 @@ test("preclaim pane-busy retry reuses both seats and delivers the task once", as
     `else if(a[0]==='pane'&&a[1]==='get')out({pane:pane(a[2])});` +
     `else if(a[0]==='agent'&&a[1]==='get'){const agent=s.agents[a[2]];if(agent)out({agent});else{console.error(JSON.stringify({error:{code:'agent_not_found'}}));process.exitCode=1;}}` +
     `else if(a[0]==='agent'&&a[1]==='start'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';if(role==='lisa'&&fs.existsSync(process.env.FAKE_LISA_BUSY)){console.error(JSON.stringify({error:{code:'agent_pane_busy'}}));process.exitCode=1;}else{const agent={name:target,agent:a[4],workspace_id:'w2',pane_id:a[6],terminal_id:role==='ralph'?'term-ralph':'term-lisa',cwd:process.env.FAKE_PROJECT,interactive_ready:true,agent_status:'idle'};s.agents[target]=agent;save();out({agent});}}` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){s.prompts++;save();out({type:'agent_prompted',agent:s.agents[a[2]]});}` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){s.prompts++;save();out({type:'agent_prompted',agent:{...s.agents[a[2]],agent_status:'working'}});}` +
     `else process.exit(2);\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
   fs.writeFileSync(fakeCodex, `#!${process.execPath}\nconsole.log('Logged in using ChatGPT');\n`);
