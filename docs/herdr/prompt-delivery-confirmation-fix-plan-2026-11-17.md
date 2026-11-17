@@ -2,7 +2,7 @@
 
 日期：2026-11-17  
 开发分支：`fix/herdr-delivery-ack`  
-状态：实施基线，尚未完成代码修复与真实验收
+状态：代码、自动测试及隔离真实验收已完成；待 PR/CI 审阅
 
 ## 1. 背景与现场结论
 
@@ -263,4 +263,17 @@ Herdr 返回以下结果时，统一进入投递未确认路径：
 - 新隔离真实 Herdr 会话完成 Ralph -> Lisa -> Ralph 双向交接；
 - Lisa Pane 的实际显示和 Agent 活动与插件 `accepted/handed_off` 一致；
 - 脱敏验收文档、提交 SHA 和剩余风险均已记录。
+
+## 11. 实施结果
+
+2026-11-17 已按本方案完成：
+
+- `agent prompt` 改为带边界的 `--wait`，仅在观察到 `working` 或 `blocked` 后接受投递；
+- 接受投递前再次核对绑定席位，失败时保留 `intent`，不推进游标；
+- 新增稳定错误 `PROMPT_DELIVERY_UNCONFIRMED` 和受限 `delivery_diagnostic`；
+- 插件测试 67/67、CLI 测试 531/531、npm 发布文件校验通过；
+- 隔离真实 Herdr 0.9.4 会话完成 generation 0 到 8，七次需要交接的正式回执均对应一份 `accepted` 投递，目标 Pane 均实际进入工作并显示交接；
+- 最后一份 Lisa 正式共识回执触发 `completed`，没有额外投递；宿主租约正常释放。
+
+详细现场证据见 [真实投递确认验收记录](prompt-delivery-confirmation-live-2026-11-17.md)。
 
