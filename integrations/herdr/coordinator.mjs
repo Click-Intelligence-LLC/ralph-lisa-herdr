@@ -297,7 +297,9 @@ function submitPrompt(paths, record, herdr, plan, role, message, file, details) 
     ...details };
   durableWrite(file, intent, true);
   const target = targetForRole(plan, role);
-  const submitted = call(herdr, ["agent", "prompt", target, message]);
+  const submitted = call(herdr, ["agent", "prompt", target, message,
+    "--wait", "--until", "working", "--until", "blocked", "--timeout", "7000"],
+    { timeoutMs: 9000 });
   if (submitted.code !== 0 || submitted.value?.error)
     throw new Error(submitted.value?.error?.code || submitted.error || "PROMPT_UNCERTAIN");
   const acknowledged = submitted.value?.result;
@@ -309,14 +311,15 @@ function submitPrompt(paths, record, herdr, plan, role, message, file, details) 
       acknowledged.agent?.agent !== (role === "ralph" ? "claude" : "codex") ||
       acknowledged.agent?.workspace_id !== plan.workspace_id ||
       acknowledged.agent?.pane_id !== plan.seats[role].pane_id ||
+      !["working", "blocked"].includes(acknowledged.agent?.agent_status) ||
       acknowledgedCwd !== paths.real)
     throw new Error("PROMPT_ACK_MISMATCH");
-  durableWrite(file, { ...intent, status: "accepted" });
   const nativeSession = observeSeat(herdr, plan, role,
     role === "ralph" ? "claude" : "codex", false);
   if (!plan.seats[role].native_session_fingerprint_sha256 &&
       nativeSession.status === "present")
     plan.seats[role].native_session_fingerprint_sha256 = nativeSession.fingerprint_sha256;
+  durableWrite(file, { ...intent, status: "accepted" });
 }
 
 function requireTaskFile(snapshot) {

@@ -142,7 +142,7 @@ test("coordinator claims and binds observed seats, heartbeats, then releases on 
     `if(a[0]==='--version') console.log('herdr 0.9.4');\n` +
     `else if(a[0]==='integration') console.log('claude: not installed\\ncodex: not installed');\n` +
     `else if(a[0]==='agent'&&a[1]==='get'){const target=a[2];const role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';const hasLisaSession=require('node:fs').existsSync(process.env.FAKE_LISA_SESSION_READY);const agent=role==='ralph'?'claude':'codex';console.log(JSON.stringify({result:{agent:{name:target,agent,workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',terminal_id:role==='ralph'?(process.env.FAKE_RALPH_TERMINAL||'term-r'):'term-l',cwd:process.env.FAKE_PROJECT,agent_session:role==='ralph'||hasLisaSession?{agent,kind:'id',source:'herdr:'+agent,value:role==='ralph'?(process.env.FAKE_RALPH_SESSION||'session-123'):'lisa-session-123'}:undefined,interactive_ready:true,agent_status:role==='lisa'&&require('node:fs').existsSync(process.env.FAKE_BUSY_FILE)?'working':'idle'}}}));}\n` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){const target=a[2];const role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,JSON.stringify({role,target,message:a[3]})+'\\n');console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:role==='ralph'?'claude':'codex',workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',cwd:process.env.FAKE_PROJECT,agent_status:'working'}}}));}\n` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){const target=a[2];const role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';const waits=a.includes('--wait')&&a.includes('--until')&&a.includes('working')&&a.includes('blocked');if(!waits){console.error(JSON.stringify({error:{code:'prompt_wait_required'}}));process.exitCode=1;}else{require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,JSON.stringify({role,target,message:a[3]})+'\\n');console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:role==='ralph'?'claude':'codex',workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',cwd:process.env.FAKE_PROJECT,agent_status:role==='lisa'?'blocked':'working'}}}));}}\n` +
     `else process.exit(2);\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
   fs.writeFileSync(fakeCodex, `#!${process.execPath}\nconsole.log('Logged in using ChatGPT');\n`);
@@ -392,7 +392,7 @@ test("start waits for blocked startup and a transient busy seat after claim", as
     `else if(a[0]==='agent'&&a[1]==='start'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';` +
       `const agent={name:target,agent:a[4],workspace_id:'w2',pane_id:a[6],terminal_id:'term-'+role,cwd:process.env.FAKE_PROJECT,interactive_ready:role==='ralph',agent_status:role==='ralph'?'idle':'blocked'};` +
       `s.agents[target]=agent;save();if(role==='lisa'){console.error(JSON.stringify({error:{code:'agent_not_ready'}}));process.exitCode=1;}else out({agent});}` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){const agent=s.agents[a[2]];s.prompts=(s.prompts||0)+1;save();out({type:'agent_prompted',agent});}` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){const agent=s.agents[a[2]];s.prompts=(s.prompts||0)+1;save();out({type:'agent_prompted',agent:{...agent,agent_status:'working'}});}` +
     `else process.exit(2);\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
   fs.writeFileSync(fakeCodex, `#!${process.execPath}\nconsole.log('Logged in using ChatGPT');\n`);
@@ -454,7 +454,7 @@ test("start waits for blocked startup and a transient busy seat after claim", as
   }
 });
 
-for (const failure of ["initial-timeout", "timeout", "wrong-pane", "paused-commit",
+for (const failure of ["initial-timeout", "initial-stalled", "timeout", "wrong-pane", "paused-commit",
   "server-restart", "server-restart-bind-failure", "server-restart-continue",
   "server-restart-continue-failure", "server-restart-continue-uncertain",
   "server-restart-nonzero-continue", "server-restart-nonzero-paused",
@@ -479,7 +479,7 @@ for (const failure of ["initial-timeout", "timeout", "wrong-pane", "paused-commi
     `if(a[0]==='--version')console.log('herdr 0.9.4');` +
     `else if(a[0]==='integration')console.log('claude: current (v10)\\ncodex: current (v9)');` +
     `else if(a[0]==='agent'&&a[1]==='get'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';const fs=require('node:fs');const changed=fs.existsSync(process.env.FAKE_SERVER_RESTARTED);const marker=process.env.FAKE_AUDIT_MUTATION;if(role==='ralph'&&marker&&fs.existsSync(marker)){const targetFile=fs.readFileSync(marker,'utf8').trim()==='lease'?process.env.FAKE_LEASE_PATH:process.env.FAKE_RECORD_PATH;const value=JSON.parse(fs.readFileSync(targetFile,'utf8'));if(targetFile===process.env.FAKE_LEASE_PATH)value.heartbeat_seq++;else value.error='changed-during-audit';fs.writeFileSync(targetFile,JSON.stringify(value));fs.unlinkSync(marker);}const rebindMarker=process.env.FAKE_REBIND_MARKER;const continuationMarker=process.env.FAKE_CONTINUATION_MARKER;const fail=(rebindMarker&&fs.existsSync(rebindMarker)&&JSON.parse(fs.readFileSync(rebindMarker,'utf8')).status==='claimed')||(continuationMarker&&fs.existsSync(continuationMarker));const lisaSession=role==='lisa'&&process.env.FAKE_PROMPT_FAILURE==='server-restart-nonzero-continue'&&fs.existsSync(process.env.FAKE_PROMPTS)&&fs.readFileSync(process.env.FAKE_PROMPTS,'utf8').includes('lisa\\n');console.log(JSON.stringify({result:{agent:{name:target,agent:role==='ralph'?'claude':'codex',workspace_id:'w1',pane_id:role==='ralph'?'w1:p1':'w1:p2',terminal_id:(fail?'bad-':changed?'new-':'term-')+role,cwd:process.env.FAKE_PROJECT,agent_session:role==='ralph'?{agent:'claude',kind:'id',source:'herdr:claude',value:process.env.FAKE_RALPH_SESSION||'ralph-session-1'}:lisaSession?{agent:'codex',kind:'id',source:'herdr:codex',value:'lisa-session-1'}:undefined,interactive_ready:true,agent_status:'idle'}}}));}` +
-    `else if(a[0]==='agent'&&a[1]==='prompt'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,role+'\\n');if((role==='ralph'&&process.env.FAKE_PROMPT_FAILURE==='initial-timeout')||(role==='lisa'&&process.env.FAKE_PROMPT_FAILURE==='timeout')){console.error(JSON.stringify({error:{code:'timeout'}}));process.exitCode=1;}else if(role==='ralph')console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:'claude',workspace_id:'w1',pane_id:'w1:p1',cwd:process.env.FAKE_PROJECT}}}));else console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:'codex',workspace_id:'w1',pane_id:['server-restart-continue','server-restart-nonzero-continue','server-restart-task-update','server-restart-task-update-crash'].includes(process.env.FAKE_PROMPT_FAILURE)?'w1:p2':'w1:p9',cwd:process.env.FAKE_PROJECT}}}));}` +
+    `else if(a[0]==='agent'&&a[1]==='prompt'){const target=a[2],role=target==='ralph'||target.startsWith('ralph_')?'ralph':'lisa';require('node:fs').appendFileSync(process.env.FAKE_PROMPTS,role+'\\n');if(role==='ralph'&&process.env.FAKE_PROMPT_FAILURE==='initial-stalled'&&a.includes('--wait')){console.error(JSON.stringify({error:{code:'agent_prompt_stalled'}}));process.exitCode=1;}else if((role==='ralph'&&process.env.FAKE_PROMPT_FAILURE==='initial-timeout')||(role==='lisa'&&process.env.FAKE_PROMPT_FAILURE==='timeout')){console.error(JSON.stringify({error:{code:'timeout'}}));process.exitCode=1;}else if(role==='ralph')console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:'claude',workspace_id:'w1',pane_id:'w1:p1',cwd:process.env.FAKE_PROJECT,agent_status:'working'}}}));else console.log(JSON.stringify({result:{type:'agent_prompted',agent:{name:target,agent:'codex',workspace_id:'w1',pane_id:['server-restart-continue','server-restart-nonzero-continue','server-restart-task-update','server-restart-task-update-crash'].includes(process.env.FAKE_PROMPT_FAILURE)?'w1:p2':'w1:p9',cwd:process.env.FAKE_PROJECT,agent_status:'working'}}}));}` +
     `else process.exitCode=2;\n`);
   fs.writeFileSync(fakeClaude, `#!${process.execPath}\nconsole.log('{"loggedIn":true}');\n`);
   fs.writeFileSync(fakeCodex, `#!${process.execPath}\nconsole.log('Logged in using ChatGPT');\n`);
@@ -503,9 +503,10 @@ for (const failure of ["initial-timeout", "timeout", "wrong-pane", "paused-commi
   try {
     const started = await waitForLine(child, (value) =>
       value.status === "started" || value.status === "needs_reconcile");
-    if (failure === "initial-timeout") {
+    if (["initial-timeout", "initial-stalled"].includes(failure)) {
       assert.equal(started.status, "needs_reconcile");
-      assert.equal(started.code, "timeout");
+      assert.equal(started.code,
+        failure === "initial-stalled" ? "agent_prompt_stalled" : "timeout");
       const sessionDir = path.join(stateDir, "sessions",
         fs.readdirSync(path.join(stateDir, "sessions"))[0]);
       const record = JSON.parse(fs.readFileSync(path.join(sessionDir, "record.json"), "utf8"));
