@@ -24,7 +24,7 @@ Install Herdr 0.9.4 or later, then install this CLI package and let it set up
 the matching public plugin:
 
 ```bash
-npm install -g ralph-lisa-loop@0.3.16
+npm install -g ralph-lisa-loop@0.3.17
 herdr-rll setup
 mkdir my-project && cd my-project
 herdr-rll --full-auto "Create a responsive website and run its build"
@@ -32,7 +32,7 @@ herdr-rll status
 ```
 
 `herdr-rll setup` installs the official `ralph-lisa.loop` plugin at tag
-`v0.1.9`, enables it, and runs its doctor. It does not silently replace a
+`v0.1.10`, enables it, and runs its doctor. It does not silently replace a
 locally linked plugin. You can also start from the plugin's task input page in
 Herdr. Each new task needs an empty project; use `herdr-rll status` to inspect
 an existing session. `--full-auto` configures Agent permissions, while eligible

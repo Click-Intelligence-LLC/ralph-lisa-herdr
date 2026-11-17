@@ -45,11 +45,11 @@ const args = process.argv.slice(2);
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify(args) + "\\n");
 const read = () => JSON.parse(fs.readFileSync(process.env.FAKE_STATE));
 const write = (value) => fs.writeFileSync(process.env.FAKE_STATE, JSON.stringify(value));
-const plugin = (value) => ({ plugin_id: "ralph-lisa.loop", version: "0.1.9",
+const plugin = (value) => ({ plugin_id: "ralph-lisa.loop", version: "0.1.10",
   enabled: value.enabled, plugin_root: process.env.FAKE_PLUGIN_ROOT,
   source: value.sourceKind === "github" ? { kind: "github",
     owner: "Click-Intelligence-LLC", repo: "ralph-lisa-herdr",
-    subdir: "integrations/herdr", requested_ref: "v0.1.9",
+    subdir: "integrations/herdr", requested_ref: "v0.1.10",
     resolved_commit: "a32005abfb9be1ff2f4bd2512c1e225895ca8e63" } :
     { kind: "link" },
   actions: [{ id: "doctor", command: [process.execPath, process.env.FAKE_DOCTOR] }]
@@ -59,7 +59,7 @@ else if (args.join(" ") === "plugin list --json") {
   const value = read();
   console.log(JSON.stringify({ result: { plugins: value.installed ? [plugin(value)] : [] } }));
 } else if (args[0] === "plugin" && args[1] === "install") {
-  if (args.join(" ") !== "plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr --ref v0.1.9 --yes") process.exit(9);
+  if (args.join(" ") !== "plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr --ref v0.1.10 --yes") process.exit(9);
   else { const value = read(); value.installed = true; value.enabled = true;
     value.sourceKind = "github"; write(value); console.log("Installed"); }
 } else if (args.join(" ") === "plugin enable ralph-lisa.loop") {
@@ -88,10 +88,10 @@ describe("herdr-rll setup", () => {
       const output = JSON.parse(result.stdout);
       assert.equal(output.status, "ready");
       assert.equal(output.herdr_version, "0.9.4");
-      assert.equal(output.plugin.version, "0.1.9");
-      assert.equal(output.plugin.requested_ref, "v0.1.9");
+      assert.equal(output.plugin.version, "0.1.10");
+      assert.equal(output.plugin.requested_ref, "v0.1.10");
       assert.ok(test.commands().some((args) => args.join(" ") ===
-        "plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr --ref v0.1.9 --yes"));
+        "plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr --ref v0.1.10 --yes"));
     } finally { fs.rmSync(test.root, { recursive: true, force: true }); }
   });
 

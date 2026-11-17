@@ -7,7 +7,7 @@ Herdr plugin. It gives users one product-level command instead of requiring them
 to remember the repository, subdirectory and plugin tag.
 
 ```bash
-npm install -g ralph-lisa-loop@0.3.16
+npm install -g ralph-lisa-loop@0.3.17
 herdr-rll setup
 ```
 
@@ -16,11 +16,11 @@ then installs and verifies the separately managed Herdr plugin.
 
 ## Fixed release mapping
 
-CLI 0.3.16 installs this public plugin source:
+CLI 0.3.17 installs this public plugin source:
 
 ```text
 source: Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr
-ref:    v0.1.9
+ref:    v0.1.10
 id:     ralph-lisa.loop
 ```
 
@@ -54,8 +54,8 @@ or modify an existing RLL session.
   "herdr_version": "0.9.4",
   "plugin": {
     "id": "ralph-lisa.loop",
-    "version": "0.1.9",
-    "requested_ref": "v0.1.9",
+    "version": "0.1.10",
+    "requested_ref": "v0.1.10",
     "resolved_commit": "...",
     "enabled": true
   },
@@ -91,7 +91,7 @@ error code on stderr.
 ```bash
 herdr plugin install \
   Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr \
-  --ref v0.1.9
+  --ref v0.1.10
 
 herdr plugin action invoke ralph-lisa.loop.doctor
 ```

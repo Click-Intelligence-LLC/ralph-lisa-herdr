@@ -2,28 +2,28 @@
 
 Run Ralph (Claude) and Lisa (Codex) as two seats inside [Herdr](https://herdr.dev), with turn-based handoff (write → review → rework / pass) driven by the Ralph-Lisa Loop CLI.
 
-- Herdr plugin manifest: `integrations/herdr/herdr-plugin.toml` (plugin id `ralph-lisa.loop`, version 0.1.9, requires Herdr ≥ 0.9.4)
+- Herdr plugin manifest: `integrations/herdr/herdr-plugin.toml` (plugin id `ralph-lisa.loop`, version 0.1.10, requires Herdr ≥ 0.9.4)
 - Platforms: macOS
 - Status: **alpha** — live acceptance recorded against Herdr 0.9.4; see `docs/herdr/` for design, contracts and acceptance notes.
 
 ## Install
 
-CLI 0.3.16 and later can install and verify the matching public Herdr plugin:
+CLI 0.3.17 and later can install and verify the matching public Herdr plugin:
 
 ```bash
-npm install -g ralph-lisa-loop@0.3.16
+npm install -g ralph-lisa-loop@0.3.17
 herdr-rll setup
 ```
 
 `herdr-rll setup` checks Herdr 0.9.4 or later, installs the official plugin from
-`Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr` at tag `v0.1.9`,
+`Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr` at tag `v0.1.10`,
 enables it when necessary, and runs the plugin's doctor. It refuses to replace
 a local development link or another source registered as `ralph-lisa.loop`.
 
 The equivalent manual plugin command remains available for inspection and recovery:
 
 ```bash
-herdr plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr --ref v0.1.9
+herdr plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr --ref v0.1.10
 ```
 
 After setup, start a task from an empty project:
