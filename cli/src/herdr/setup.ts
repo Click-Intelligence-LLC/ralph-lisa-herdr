@@ -4,9 +4,9 @@ import { spawnSync } from "node:child_process";
 
 const PLUGIN_ID = "ralph-lisa.loop";
 const PLUGIN_SOURCE = "Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr";
-const PLUGIN_REF = "v0.1.9";
+const PLUGIN_REF = "v0.1.10";
 const MIN_HERDR = [0, 9, 4] as const;
-const MIN_PLUGIN = [0, 1, 9] as const;
+const MIN_PLUGIN = [0, 1, 10] as const;
 
 type CommandResult = {
   status: number | null;

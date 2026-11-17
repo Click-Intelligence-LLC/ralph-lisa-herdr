@@ -48,10 +48,10 @@ If launch output is interrupted or a Pane remains open, use `herdr-rll status --
 
 ## GitHub installation
 
-For normal installation, CLI 0.3.16 and later provides the supported setup entry point:
+For normal installation, CLI 0.3.17 and later provides the supported setup entry point:
 
 ```bash
-npm install -g ralph-lisa-loop@0.3.16
+npm install -g ralph-lisa-loop@0.3.17
 herdr-rll setup
 ```
 
