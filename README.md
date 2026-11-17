@@ -8,25 +8,34 @@ Run Ralph (Claude) and Lisa (Codex) as two seats inside [Herdr](https://herdr.de
 
 ## Install
 
-From the Herdr plugin marketplace (after it is indexed), or directly:
+CLI 0.3.16 and later can install and verify the matching public Herdr plugin:
 
 ```bash
-herdr plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr
+npm install -g ralph-lisa-loop@0.3.16
+herdr-rll setup
 ```
 
-The manifest builds the bundled CLI from `../../cli` (npm ci + npm run build + verify-package) when the plugin is installed, so the repository must keep the `cli/` directory next to `integrations/herdr/`.
+`herdr-rll setup` checks Herdr 0.9.4 or later, installs the official plugin from
+`Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr` at tag `v0.1.9`,
+enables it when necessary, and runs the plugin's doctor. It refuses to replace
+a local development link or another source registered as `ralph-lisa.loop`.
 
-For the terminal entry point, install the CLI package separately. The Herdr plugin installation does not add a global `herdr-rll` command:
+The equivalent manual plugin command remains available for inspection and recovery:
 
 ```bash
-npm install -g ralph-lisa-loop@0.3.14
+herdr plugin install Click-Intelligence-LLC/ralph-lisa-herdr/integrations/herdr --ref v0.1.9
+```
+
+After setup, start a task from an empty project:
+
+```bash
 mkdir my-project && cd my-project
 herdr-rll --full-auto "Create a responsive website and run its build"
 ```
 
-The terminal command and the Herdr **Start Ralph-Lisa task** overlay launch the same RLL workflow. Run a new task in an empty project directory. `--full-auto` selects the Agent permission profile; eligible candidates are committed automatically for that session, but their source is recorded as `unverified`. Claude may still ask you to trust a new directory. Use `herdr-rll status` to inspect an existing launch instead of starting it again.
+The manifest builds the bundled CLI from `../../cli` (npm ci + npm run build + verify-package) when the plugin is installed, so the repository must keep the `cli/` directory next to `integrations/herdr/`.
 
-`0.3.14` is the current public npm release. This branch prepares CLI `0.3.15`; do not advertise or install `0.3.15` from npm until the maintainer has published it and the public-package acceptance check passes.
+The terminal command and the Herdr **Start Ralph-Lisa task** overlay launch the same RLL workflow. Run a new task in an empty project directory. `--full-auto` selects the Agent permission profile; eligible candidates are committed automatically for that session, but their source is recorded as `unverified`. Claude may still ask you to trust a new directory. Use `herdr-rll status` to inspect an existing launch instead of starting it again.
 
 One Herdr Server can host multiple projects concurrently. Each new RLL session gets its own Ralph and Lisa Agent targets, so keeping one project's Agent panes open no longer blocks another project from starting. A project still permits only one RLL session at a time; use `herdr-rll status` or the explicit recovery flow instead of starting the same project twice.
 

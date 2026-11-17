@@ -58,3 +58,7 @@ export function parseHerdrStatusOptions(args: string[]): string {
       !args[1].startsWith("--")) return path.resolve(args[1]);
   throw new Error("STATUS_USAGE_INVALID");
 }
+
+export function parseHerdrSetupOptions(args: string[]): void {
+  if (args.length !== 0) throw new Error("SETUP_USAGE_INVALID");
+}
